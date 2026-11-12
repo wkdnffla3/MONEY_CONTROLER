@@ -193,6 +193,22 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
   .stat.bal .v{font-size:27px}
 }
 @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+[hidden]{display:none!important}
+#loginOv{align-items:center;padding:16px}
+#loginOv .sheet{max-height:none}
+.auth{padding:28px 24px 24px!important}
+.auth-brand{text-align:center;margin-bottom:20px}
+.auth-brand .mark{width:46px;height:46px;border-radius:14px;background:var(--accent);color:var(--surface);display:grid;place-items:center;margin:0 auto 10px}
+.auth-brand h3{display:block;font-size:20px;margin-bottom:4px}
+.auth-brand p{font-size:13px;color:var(--muted)}
+.auth-tabs{margin-bottom:16px}
+.auth-tabs button[aria-pressed="true"]{background:var(--surface)!important;color:var(--ink)!important;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.auth-row{display:flex;justify-content:space-between;align-items:center;margin-top:-4px}
+.check{display:inline-flex;align-items:center;gap:7px;font-size:13.5px;cursor:pointer;user-select:none}
+.check input{width:17px;height:17px;accent-color:var(--accent)}
+.err.ok{color:var(--accent)}
+.userchip{font-size:12px;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:480px){.userchip{display:none}}
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
 </style>
 </head>
@@ -207,6 +223,7 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <div class="sync" id="sync"><i></i><span>불러오는 중…</span></div>
+      <span class="userchip" id="userchip"></span>
       <button class="linkbtn" id="logout" hidden>로그아웃</button>
     </div>
   </header>
@@ -278,12 +295,37 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 </div>
 
 <div class="overlay" id="loginOv" role="dialog" aria-modal="true" aria-labelledby="loginTitle" style="background:var(--bg)">
-  <div class="sheet" style="max-width:400px;border-radius:22px;animation:none">
-    <h3 id="loginTitle" style="flex-direction:column;align-items:flex-start;gap:4px">가계부 로그인<span style="font-size:13px;font-weight:400;color:var(--muted)">이메일로 받은 링크를 누르면 로그인돼요. 같은 이메일이면 어느 기기에서나 같은 내역이 보여요.</span></h3>
-    <form class="form" id="loginForm" novalidate>
-      <div class="field"><label for="loginEmail">이메일</label><input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com" required></div>
-      <div class="err" id="loginMsg" aria-live="polite"></div>
-      <button class="btn primary" type="submit">로그인 링크 받기</button>
+  <div class="sheet auth" style="max-width:400px;border-radius:22px;animation:none">
+    <div class="auth-brand">
+      <div class="mark" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v14l-3-2-3 2-2-2-2 2-3-2z"/><path d="M9 8h6M9 12h6"/></svg></div>
+      <h3 id="loginTitle">가계부</h3>
+      <p>내 계정으로 로그인하면 어느 기기에서나 같은 내역을 볼 수 있어요.</p>
+    </div>
+
+    <div class="typeswitch auth-tabs" role="tablist">
+      <button type="button" role="tab" data-mode="login" aria-pressed="true">로그인</button>
+      <button type="button" role="tab" data-mode="signup" aria-pressed="false">회원가입</button>
+    </div>
+
+    <form class="form" id="authForm" novalidate>
+      <div class="field"><label for="authEmail">이메일</label><input id="authEmail" type="email" autocomplete="email" placeholder="you@example.com" required></div>
+      <div class="field" data-show="login signup"><label for="authPw">비밀번호</label><input id="authPw" type="password" autocomplete="current-password" placeholder="6자 이상" minlength="6"></div>
+      <div class="field" data-show="signup" hidden><label for="authPw2">비밀번호 확인</label><input id="authPw2" type="password" autocomplete="new-password" placeholder="한 번 더 입력"></div>
+      <div class="auth-row" data-show="login">
+        <label class="check"><input type="checkbox" id="remember" checked> 자동 로그인</label>
+        <button type="button" class="linkbtn" id="toReset">비밀번호 찾기</button>
+      </div>
+      <div class="err" id="authMsg" aria-live="polite"></div>
+      <button class="btn primary" type="submit" id="authSubmit">로그인</button>
+      <button type="button" class="linkbtn" id="backToLogin" data-show="reset" hidden style="justify-self:center">← 로그인으로 돌아가기</button>
+    </form>
+
+    <form class="form" id="newPwForm" novalidate hidden>
+      <p style="font-size:14px;color:var(--muted)">새 비밀번호를 입력해 주세요.</p>
+      <div class="field"><label for="newPw">새 비밀번호</label><input id="newPw" type="password" autocomplete="new-password" placeholder="6자 이상"></div>
+      <div class="field"><label for="newPw2">새 비밀번호 확인</label><input id="newPw2" type="password" autocomplete="new-password"></div>
+      <div class="err" id="newPwMsg" aria-live="polite"></div>
+      <button class="btn primary" type="submit">비밀번호 변경</button>
     </form>
   </div>
 </div>
@@ -323,6 +365,7 @@ const state = {
 
 // ---------- storage layer (Supabase) ----------
 // ▼ Supabase 대시보드 → Project Settings → API 에서 복사해 붙여넣으세요.
+
 const SUPABASE_URL = 'https://jjykzlchufxswulefdwi.supabase.co/rest/v1/';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpqeWt6bGNodWZ4c3d1bGVmZHdpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ0MTg1NjksImV4cCI6MjEwOTk5NDU2OX0.GmoAp6pjF-Uo3t_gzRVs5M8Rhp_PaAB-RvQQ-mvKWwQ';
 
@@ -334,16 +377,23 @@ const store = {
       showNotice('index.html 위쪽의 SUPABASE_URL과 SUPABASE_ANON_KEY를 내 프로젝트 값으로 바꿔 주세요.');
       return;
     }
-    this.sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    this.sb.auth.onAuthStateChange((_ev, session) => this.onSession(session));
+    this.sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: { storage: authStorage, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+    });
+    this.sb.auth.onAuthStateChange((ev, session) => {
+      if (ev === 'PASSWORD_RECOVERY') { showNewPwForm(); return; }
+      this.onSession(session);
+    });
     const { data } = await this.sb.auth.getSession();
     this.onSession(data.session);
   },
   onSession(session) {
     const u = session ? session.user : null;
-    if ((u && u.id) === (this.user && this.user.id)) return;
+    if (this.seen && (u && u.id) === (this.user && this.user.id)) return;
+    this.seen = true;
     this.user = u;
     $('#logout').hidden = !u;
+    $('#userchip').textContent = u ? (u.email || '') : '';
     if (!u) {
       if (this.channel) { this.sb.removeChannel(this.channel); this.channel = null; }
       state.tx = new Map(); state.budget = 0; render();
@@ -351,7 +401,8 @@ const store = {
       setSync('', '로그인 필요');
       return;
     }
-    $('#loginOv').classList.remove('open');
+    if (!recovering) $('#loginOv').classList.remove('open');
+    if (this.channel) { this.sb.removeChannel(this.channel); this.channel = null; }
     this.load();
     // 다른 기기에서 바꾼 내용을 실시간으로 반영
     this.channel = this.sb.channel('ledger-' + u.id)
@@ -406,17 +457,114 @@ function writeErr(e) {
   toast('저장하지 못했어요' + (e && e.message ? ': ' + e.message : '') );
 }
 
-// 로그인 / 로그아웃
-$('#loginForm').addEventListener('submit', async e => {
+// ---------- 인증: 회원가입 / 로그인 / 자동 로그인 / 비밀번호 찾기 ----------
+// 자동 로그인 ON → localStorage(브라우저를 닫아도 유지), OFF → sessionStorage(탭을 닫으면 로그아웃)
+const REMEMBER_KEY = 'ledger.remember';
+const safe = (fn, fb) => { try { return fn(); } catch (e) { return fb; } };
+const wantsRemember = () => safe(() => localStorage.getItem(REMEMBER_KEY) !== '0', true);
+const authStorage = {
+  getItem: k => safe(() => localStorage.getItem(k) ?? sessionStorage.getItem(k), null),
+  setItem: (k, v) => safe(() => {
+    if (wantsRemember()) { localStorage.setItem(k, v); sessionStorage.removeItem(k); }
+    else { sessionStorage.setItem(k, v); localStorage.removeItem(k); }
+  }),
+  removeItem: k => safe(() => { localStorage.removeItem(k); sessionStorage.removeItem(k); })
+};
+
+const KO_ERR = [
+  [/invalid login credentials/i, '이메일 또는 비밀번호가 맞지 않아요.'],
+  [/email not confirmed/i, '이메일 인증을 먼저 완료해 주세요. 가입할 때 받은 메일의 링크를 눌러 주세요.'],
+  [/already registered|already been registered|user already exists/i, '이미 가입된 이메일이에요. 로그인해 주세요.'],
+  [/password should be at least|password.*(short|length)/i, '비밀번호는 6자 이상이어야 해요.'],
+  [/weak password|pwned/i, '너무 흔한 비밀번호예요. 다른 비밀번호를 써 주세요.'],
+  [/rate limit|too many|security purposes/i, '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.'],
+  [/unable to validate email|invalid email|email address .* invalid/i, '이메일 주소 형식을 확인해 주세요.'],
+  [/same.*password|different from the old/i, '이전과 다른 비밀번호를 입력해 주세요.'],
+];
+const koErr = e => { const m = (e && e.message) || ''; const hit = KO_ERR.find(([r]) => r.test(m)); return hit ? hit[1] : ('문제가 생겼어요: ' + m); };
+const redirectUrl = () => location.origin + location.pathname;
+
+let authMode = 'login'; // login | signup | reset
+let recovering = /type=recovery/.test(location.hash);
+function setAuthMode(mode) {
+  authMode = mode;
+  document.querySelectorAll('.auth-tabs [data-mode]').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === mode));
+  $('.auth-tabs').hidden = mode === 'reset';
+  document.querySelectorAll('#authForm [data-show]').forEach(el => { el.hidden = !el.dataset.show.split(' ').includes(mode); });
+  $('#authPw').autocomplete = mode === 'signup' ? 'new-password' : 'current-password';
+  $('#authSubmit').textContent = { login: '로그인', signup: '가입하기', reset: '재설정 메일 받기' }[mode];
+  const msg = $('#authMsg'); msg.textContent = ''; msg.className = 'err';
+  $('#authForm').hidden = false; $('#newPwForm').hidden = true;
+}
+function authMsg(text, ok) { const m = $('#authMsg'); m.textContent = text; m.className = 'err' + (ok ? ' ok' : ''); }
+
+document.querySelectorAll('.auth-tabs [data-mode]').forEach(b => b.onclick = () => setAuthMode(b.dataset.mode));
+$('#toReset').onclick = () => setAuthMode('reset');
+$('#backToLogin').onclick = () => setAuthMode('login');
+safe(() => { $('#remember').checked = wantsRemember(); });
+
+$('#authForm').addEventListener('submit', async e => {
   e.preventDefault();
-  const email = $('#loginEmail').value.trim(), msg = $('#loginMsg');
-  if (!/^\S+@\S+\.\S+$/.test(email)) { msg.textContent = '이메일 주소를 확인해 주세요.'; return; }
-  msg.style.color = 'var(--muted)'; msg.textContent = '보내는 중…';
-  const { error } = await store.sb.auth.signInWithOtp({ email, options: { emailRedirectTo: location.origin + location.pathname } });
-  if (error) { msg.style.color = ''; msg.textContent = '보내지 못했어요: ' + error.message; }
-  else msg.textContent = '메일함을 확인해 주세요. 링크를 누르면 이 화면으로 돌아와 로그인돼요.';
+  if (!store.sb) return;
+  const email = $('#authEmail').value.trim(), pw = $('#authPw').value, pw2 = $('#authPw2').value;
+  if (!/^\S+@\S+\.\S+$/.test(email)) return authMsg('이메일 주소를 확인해 주세요.');
+  if (authMode !== 'reset' && pw.length < 6) return authMsg('비밀번호는 6자 이상이어야 해요.');
+  if (authMode === 'signup' && pw !== pw2) return authMsg('비밀번호가 서로 달라요.');
+
+  const btn = $('#authSubmit'); btn.disabled = true; authMsg('');
+  try {
+    if (authMode === 'login') {
+      safe(() => localStorage.setItem(REMEMBER_KEY, $('#remember').checked ? '1' : '0'));
+      const { error } = await store.sb.auth.signInWithPassword({ email, password: pw });
+      if (error) throw error;
+      $('#authPw').value = '';
+    } else if (authMode === 'signup') {
+      safe(() => localStorage.setItem(REMEMBER_KEY, '1'));
+      const { data, error } = await store.sb.auth.signUp({ email, password: pw, options: { emailRedirectTo: redirectUrl() } });
+      if (error) throw error;
+      // 이미 가입된 이메일이면 Supabase가 identities를 빈 배열로 돌려줌
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) throw { message: 'already registered' };
+      if (!data.session) {
+        setAuthMode('login'); $('#authEmail').value = email;
+        authMsg('인증 메일을 보냈어요. 메일의 링크를 누르면 가입이 끝나고 자동으로 로그인돼요.', true);
+      }
+    } else {
+      const { error } = await store.sb.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl() });
+      if (error) throw error;
+      authMsg('비밀번호 재설정 메일을 보냈어요. 메일의 링크를 눌러 주세요.', true);
+    }
+  } catch (err) { authMsg(koErr(err)); }
+  finally { btn.disabled = false; }
 });
-$('#logout').onclick = () => store.sb && store.sb.auth.signOut();
+
+function showNewPwForm() {
+  recovering = true;
+  $('#loginOv').classList.add('open');
+  $('.auth-tabs').hidden = true;
+  $('#authForm').hidden = true;
+  $('#newPwForm').hidden = false;
+  setTimeout(() => $('#newPw').focus(), 50);
+}
+$('#newPwForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const a = $('#newPw').value, b = $('#newPw2').value, m = $('#newPwMsg');
+  if (a.length < 6) { m.textContent = '비밀번호는 6자 이상이어야 해요.'; return; }
+  if (a !== b) { m.textContent = '비밀번호가 서로 달라요.'; return; }
+  const { data, error } = await store.sb.auth.updateUser({ password: a });
+  if (error) { m.textContent = koErr(error); return; }
+  $('#newPw').value = $('#newPw2').value = '';
+  toast('비밀번호를 바꿨어요');
+  recovering = false;
+  history.replaceState(null, '', location.pathname);
+  setAuthMode('login');
+  store.user = null; store.onSession({ user: data.user });
+});
+
+$('#logout').onclick = async () => {
+  if (!store.sb) return;
+  await store.sb.auth.signOut();
+  setAuthMode('login');
+};
 document.addEventListener('visibilitychange', () => { if (!document.hidden) store.load(); });
 
 // ---------- UI helpers ----------
