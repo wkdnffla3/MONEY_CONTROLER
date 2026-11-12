@@ -21,6 +21,7 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
   const [memo, setMemo] = useState(initial?.memo || '');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const submitting = useRef(false); // 저장 버튼 연타로 같은 내역이 두 번 만들어지는 것 방지
 
   const cats = CATEGORIES[type];
   const activeCategory = cats.some((c) => c[0] === category) ? category : cats[0][0];
@@ -37,11 +38,13 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
 
   const submit = async (e) => {
     e.preventDefault();
+    if (submitting.current) return;
     const n = parseAmount(amount);
     if (!n) { setError('금액을 입력해 주세요.'); amountRef.current?.focus(); return; }
     if (n > MAX_AMOUNT) { setError('금액이 너무 커요.'); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setError('날짜를 선택해 주세요.'); return; }
     setError('');
+    submitting.current = true;
     setBusy(true);
     try {
       await onSubmit({
@@ -56,6 +59,7 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
     } catch {
       // 오류 알림은 상위(App)에서 토스트로 표시
     } finally {
+      submitting.current = false;
       setBusy(false);
     }
   };

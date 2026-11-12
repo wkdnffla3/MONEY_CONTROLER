@@ -1,14 +1,17 @@
 import { LogoIcon } from './Icons';
 
-const STATUS_TEXT = {
-  idle: ['', '로그인 필요'],
-  loading: ['', '불러오는 중…'],
-  ok: ['ok', '저장됨'],
-  error: ['warn', '불러오기 실패'],
-};
+function syncLabel({ status, online, syncing, pending }) {
+  if (!online) return ['warn', pending ? `오프라인 · 대기 ${pending}건` : '오프라인'];
+  if (syncing) return ['', pending ? `올리는 중… ${pending}건` : '동기화 중…'];
+  if (pending) return ['warn', `대기 ${pending}건`];
+  if (status === 'error') return ['warn', '불러오기 실패'];
+  if (status === 'loading') return ['', '불러오는 중…'];
+  return ['ok', '저장됨'];
+}
 
-export default function Header({ status, email, onSignOut }) {
-  const [cls, text] = STATUS_TEXT[status] || STATUS_TEXT.idle;
+export default function Header({ status, online, syncing, pending, email, onSignOut, onSync }) {
+  const [cls, text] = syncLabel({ status, online, syncing, pending });
+  const canRetry = online && pending > 0 && !syncing;
   return (
     <header className="top">
       <div className="brand">
@@ -16,7 +19,11 @@ export default function Header({ status, email, onSignOut }) {
         <h1>가계부</h1>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div className={`sync ${cls}`}><i /><span>{text}</span></div>
+        {canRetry ? (
+          <button type="button" className={`sync ${cls}`} onClick={onSync} title="지금 다시 올리기"><i /><span>{text} · 다시 시도</span></button>
+        ) : (
+          <div className={`sync ${cls}`} role="status"><i /><span>{text}</span></div>
+        )}
         {email && <span className="userchip">{email}</span>}
         {email && <button type="button" className="linkbtn" onClick={onSignOut}>로그아웃</button>}
       </div>
