@@ -9,6 +9,7 @@ create table if not exists public.transactions (
   category    text not null check (char_length(category) between 1 and 20),
   memo        text default '' check (char_length(memo) <= 100),
   date        date not null,
+  member_id   text check (member_id is null or char_length(member_id) between 1 and 64),
   created_at  bigint not null default (extract(epoch from now()) * 1000)::bigint
 );
 create index if not exists transactions_user_date_idx on public.transactions (user_id, date);
@@ -16,7 +17,9 @@ create index if not exists transactions_user_date_idx on public.transactions (us
 -- 2) 사용자별 설정(월 예산)
 create table if not exists public.settings (
   user_id  uuid primary key default auth.uid() references auth.users(id) on delete cascade,
-  budget   bigint not null default 0 check (budget between 0 and 9999999999)
+  budget   bigint not null default 0 check (budget between 0 and 9999999999),
+  members  jsonb not null default '[]'::jsonb
+           check (jsonb_typeof(members) = 'array' and jsonb_array_length(members) <= 10 and pg_column_size(members) <= 4096)
 );
 
 -- 3) 행 단위 보안: 로그인한 본인 데이터만 읽고 쓸 수 있게

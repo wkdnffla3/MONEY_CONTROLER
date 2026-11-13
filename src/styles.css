@@ -213,3 +213,40 @@ button.sync:hover{background:var(--surface-2);color:var(--ink)}
 .btn.sm{padding:8px 14px;font-size:13.5px;border-radius:10px}
 @media (display-mode: standalone){ .app{padding-top:calc(20px + env(safe-area-inset-top))} }
 .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+
+/* ---- 함께 쓰는 사람 ---- */
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:1px;flex:none}
+.who-filter{display:flex;gap:6px;overflow-x:auto;padding:2px;margin:-2px;scrollbar-width:none}
+.who-filter::-webkit-scrollbar{display:none}
+.who-filter .chip{white-space:nowrap;flex:none}
+.who-badge{display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;color:var(--ink);background:var(--surface-2);border:1px solid var(--line);border-radius:99px;padding:0 7px 0 6px;margin-right:6px;line-height:18px}
+.who-badge .dot{width:7px;height:7px;margin-right:4px;vertical-align:0}
+.share-bar{display:flex;height:14px;border-radius:99px;overflow:hidden;gap:2px;margin:2px 0 12px;background:var(--surface-2)}
+.share-bar span{display:block;height:100%;min-width:3px}
+.member-table{width:100%;border-collapse:collapse;font-size:14px}
+.member-table th,.member-table td{padding:9px 6px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.member-table th:first-child,.member-table td:first-child{text-align:left}
+.member-table thead th{font-size:12px;font-weight:500;color:var(--muted);padding-top:0}
+.member-table tbody tr{cursor:pointer;transition:background .12s}
+.member-table tbody tr:hover{background:var(--surface-2)}
+.member-table tbody tr.active{background:var(--accent-soft)}
+.member-table tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.member-table td:first-child{font-weight:600}
+.member-table .cnt{font-size:11.5px;font-weight:400;color:var(--muted);margin-left:6px}
+.member-table .pct{color:var(--muted);font-size:13px}
+.member-table .inc{color:var(--income)}
+.member-table tfoot th,.member-table tfoot td{border-bottom:0;font-weight:700;padding-top:11px}
+.member-table tfoot th{font-size:14px;color:var(--ink)}
+.hint{font-size:13px;color:var(--muted);line-height:1.5}
+.warn-text{color:var(--warn)}
+.member-edit{list-style:none;display:grid;gap:8px}
+.member-edit li{display:grid;grid-template-columns:30px 1fr auto 36px;gap:8px;align-items:center}
+.member-edit .swatch{width:30px;height:30px;border-radius:9px;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line)}
+.member-edit input:not([type=radio]),.member-add input{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:15px}
+.member-edit input:focus,.member-add input:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+.me-radio{display:inline-flex;align-items:center;gap:4px;font-size:13px;color:var(--muted);cursor:pointer;white-space:nowrap}
+.me-radio input{accent-color:var(--accent);width:16px;height:16px}
+.member-edit .del{width:36px;height:36px;color:var(--muted);font-size:14px}
+.member-edit .del:hover{color:var(--expense);background:var(--expense-soft)}
+.member-add{display:grid;grid-template-columns:1fr auto;gap:8px}
+@media (min-width:640px){ .member-table{font-size:14.5px} }
