@@ -1,5 +1,6 @@
 import { useId, useRef, useState } from 'react';
 import { CATEGORIES } from '../lib/categories';
+import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount } from '../lib/format';
 
 const QUICK = [1000, 5000, 10000, 50000];
@@ -11,7 +12,7 @@ const MAX_AMOUNT = 9_999_999_999;
  * initial 이 있으면 수정 모드(삭제 버튼 표시), 없으면 새 내역.
  * onSubmit(data) 는 Promise 를 돌려줘야 함 — 성공하면 새 내역 모드에서 입력값을 비움.
  */
-export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoFocus }) {
+export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null }) {
   const uid = useId();
   const amountRef = useRef(null);
   const [type, setType] = useState(initial?.type || 'expense');
@@ -19,6 +20,9 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
   const [category, setCategory] = useState(initial?.category || CATEGORIES.expense[0][0]);
   const [date, setDate] = useState(initial?.date || defaultDate);
   const [memo, setMemo] = useState(initial?.memo || '');
+  // 누가: 등록된 사람 id 또는 null(공동). 삭제된 사람이 지정돼 있던 내역은 공동으로 보임
+  const validId = (id) => (id && members.some((m) => m.id === id) ? id : null);
+  const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(defaultMemberId)));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false); // 저장 버튼 연타로 같은 내역이 두 번 만들어지는 것 방지
@@ -53,9 +57,10 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
         category: activeCategory,
         memo: memo.trim(),
         date,
+        memberId: validId(memberId),
         createdAt: initial?.createdAt || Date.now(),
       });
-      if (!initial) { setAmount(''); setMemo(''); }
+      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); }
     } catch {
       // 오류 알림은 상위(App)에서 토스트로 표시
     } finally {
@@ -103,6 +108,22 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
           ))}
         </div>
       </div>
+
+      {members.length > 0 && (
+        <div className="field">
+          <label>누가</label>
+          <div className="chips">
+            {members.map((m) => (
+              <button key={m.id} type="button" className="chip" aria-pressed={memberId === m.id} onClick={() => setMemberId(m.id)}>
+                <span className="dot" style={{ background: memberColor(m) }} />{m.name}
+              </button>
+            ))}
+            <button type="button" className="chip" aria-pressed={memberId === null} onClick={() => setMemberId(null)}>
+              <span className="dot" style={{ background: memberColor(null) }} />{SHARED_LABEL}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="row2">
         <div className="field">

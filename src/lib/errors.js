@@ -9,6 +9,7 @@ const RULES = [
   [/rate limit|too many|security purposes/i, '요청이 너무 잦아요. 잠시 후 다시 시도해 주세요.'],
   [/unable to validate email|invalid email|email address .* invalid/i, '이메일 주소 형식을 확인해 주세요.'],
   [/same.*password|different from the old/i, '이전과 다른 비밀번호를 입력해 주세요.'],
+  [/column .* does not exist|could not find the .* column/i, 'DB 업데이트가 필요해요. Supabase SQL Editor에서 supabase/003_members.sql을 실행해 주세요.'],
   [/invalid path specified|requested path is invalid/i, 'Supabase 주소가 잘못됐어요. VITE_SUPABASE_URL을 확인해 주세요.'],
   [/invalid api key|no api key/i, 'Supabase 키가 잘못됐어요. VITE_SUPABASE_ANON_KEY를 확인해 주세요.'],
   [/failed to fetch|networkerror|network request failed/i, '서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.'],
