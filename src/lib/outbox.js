@@ -45,19 +45,74 @@ export function isValidMembers(list) {
   }
   return true;
 }
-const cleanMembers = (list) => (isValidMembers(list) ? list.map(({ id, name, color }) => ({ id, name, color })) : []);
+
+const YM = /^\d{4}-(0[1-9]|1[0-2])$/;
+const isYm = (v) => typeof v === 'string' && YM.test(v);
+
+/** 반복 내역 규칙: 최대 50개 */
+export function isValidRecurring(list) {
+  if (!Array.isArray(list) || list.length > 50) return false;
+  const ids = new Set();
+  for (const r of list) {
+    if (!r || typeof r !== 'object' || !isStr(r.id, 40) || ids.has(r.id)) return false;
+    if (!(r.type === 'expense' || r.type === 'income') || !isAmount(r.amount, 1) || !isStr(r.category, 20)) return false;
+    if (typeof (r.memo ?? '') !== 'string' || (r.memo ?? '').length > 100) return false;
+    if (!(r.memberId == null || isStr(r.memberId, 64))) return false;
+    if (!Number.isInteger(r.day) || r.day < 1 || r.day > 31) return false;
+    if (!isYm(r.start) || !(r.end == null || isYm(r.end)) || !(r.last == null || isYm(r.last))) return false;
+    if (typeof r.active !== 'boolean') return false;
+    ids.add(r.id);
+  }
+  return true;
+}
+
+/** 사용자 카테고리: null(기본값 사용) 또는 { expense: [...], income: [...] }, 종류별 1~30개 */
+export function isValidCategories(c) {
+  if (c == null) return true;
+  if (typeof c !== 'object') return false;
+  for (const type of ['expense', 'income']) {
+    const list = c[type];
+    if (!Array.isArray(list) || list.length < 1 || list.length > 30) return false;
+    const names = new Set();
+    for (const x of list) {
+      if (!x || typeof x !== 'object' || !isStr(x.name, 20) || !x.name.trim() || names.has(x.name)) return false;
+      if (!isStr(x.icon, 8)) return false;
+      names.add(x.name);
+    }
+  }
+  return true;
+}
+
+/** 카테고리별 예산: { 카테고리명: 금액 }, 최대 60개 */
+export function isValidCatBudgets(b) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  const entries = Object.entries(b);
+  return entries.length <= 60 && entries.every(([k, v]) => isStr(k, 20) && isAmount(v, 1));
+}
+
+/**
+ * 설정형 작업 종류 → 검사 함수, DB 칸 이름, 기본값.
+ * 내역 ID가 없고, 같은 종류끼리는 마지막 것만 남게 합쳐짐.
+ */
+export const SETTINGS = {
+  budget:     { column: 'budget',      valid: (v) => isAmount(v, 0),  empty: 0 },
+  members:    { column: 'members',     valid: isValidMembers,         empty: [] },
+  recurring:  { column: 'recurring',   valid: isValidRecurring,       empty: [] },
+  categories: { column: 'categories',  valid: isValidCategories,      empty: null },
+  catBudgets: { column: 'cat_budgets', valid: isValidCatBudgets,      empty: {} },
+};
+const isSetting = (kind) => Object.prototype.hasOwnProperty.call(SETTINGS, kind);
+const cleanSetting = (kind, v) => (SETTINGS[kind].valid(v) ? v : SETTINGS[kind].empty);
+export const sanitizeSetting = cleanSetting;
+export const sanitizeMembers = (v) => cleanSetting('members', v);
 
 export function isValidOp(o) {
   if (!o || typeof o !== 'object' || !isStr(String(o.opId ?? ''), 64)) return false;
   if (o.kind === 'upsert') return isStr(o.id, 64) && isValidTx(o.data);
   if (o.kind === 'delete') return isStr(o.id, 64);
-  if (o.kind === 'budget') return isAmount(o.value, 0);
-  if (o.kind === 'members') return isValidMembers(o.value);
+  if (isSetting(o.kind)) return SETTINGS[o.kind].valid(o.value);
   return false;
 }
-
-/** 설정형 작업(예산, 사람 목록)인지 — 내역 ID가 없고 같은 종류끼리 합쳐짐 */
-const isSetting = (kind) => kind === 'budget' || kind === 'members';
 
 // ---------- 저장소 (사용자별) ----------
 // 보낼 목록: 항상 localStorage (탭을 닫아도 남아야 하므로)
@@ -96,15 +151,18 @@ export const readCache = (uid) => {
   const c = read(cKey(uid), null, 'session') || read(cKey(uid), null, 'local');
   if (!c || typeof c !== 'object' || !c.tx || typeof c.tx !== 'object') return null;
   const tx = Object.fromEntries(Object.entries(c.tx).filter(([id, t]) => isStr(id, 64) && isValidTx(t)));
-  return { tx, budget: isAmount(c.budget, 0) ? c.budget : 0, members: cleanMembers(c.members) };
+  const out = { tx };
+  for (const k of Object.keys(SETTINGS)) out[k] = cleanSetting(k, c[k]);
+  return out;
 };
 export const writeCache = (uid, state, remember) => {
   const kind = remember ? 'local' : 'session';
   remove(cKey(uid));
-  return write(cKey(uid), { tx: state.tx, budget: state.budget, members: state.members, savedAt: Date.now() }, kind);
+  const data = { tx: state.tx, savedAt: Date.now() };
+  for (const k of Object.keys(SETTINGS)) data[k] = state[k];
+  return write(cKey(uid), data, kind);
 };
-export const sanitizeMembers = cleanMembers;
-export const EMPTY_STATE = Object.freeze({ tx: {}, budget: 0, members: [] });
+export const EMPTY_STATE = Object.freeze({ tx: {}, ...Object.fromEntries(Object.entries(SETTINGS).map(([k, d]) => [k, d.empty])) });
 
 /** 로그아웃 시 이 기기에서 해당 사용자의 가계부 데이터 삭제 */
 export const clearUserData = (uid) => { remove(cKey(uid)); remove(qKey(uid)); };
@@ -122,17 +180,15 @@ export function coalesce(queue, op) {
 /** 목록에서 특정 작업 하나만 제거 (보내는 동안 합쳐져서 이미 없으면 그대로) */
 export const removeOp = (queue, opId) => queue.filter((o) => o.opId !== opId);
 
-/** 서버에서 받은 상태 { tx, budget, members } 위에 아직 못 보낸 작업을 덮어서 화면용 상태를 만듦 */
+/** 서버에서 받은 상태 { tx, budget, members, ... } 위에 아직 못 보낸 작업을 덮어서 화면용 상태를 만듦 */
 export function applyQueue(state, queue) {
-  const tx = { ...state.tx };
-  let { budget, members } = state;
+  const next = { ...EMPTY_STATE, ...state, tx: { ...state.tx } };
   for (const op of queue) {
-    if (op.kind === 'upsert') tx[op.id] = op.data;
-    else if (op.kind === 'delete') delete tx[op.id];
-    else if (op.kind === 'budget') budget = op.value;
-    else if (op.kind === 'members') members = op.value;
+    if (op.kind === 'upsert') next.tx[op.id] = op.data;
+    else if (op.kind === 'delete') delete next.tx[op.id];
+    else if (isSetting(op.kind)) next[op.kind] = op.value;
   }
-  return { tx, budget, members: members || [] };
+  return next;
 }
 
 /**

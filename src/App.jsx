@@ -26,6 +26,13 @@ import { SHARED, filterByOwner, findMember, getMe, setMe } from './lib/members';
 import InstallBanner from './components/InstallBanner';
 import { PlusIcon } from './components/Icons';
 import { AuthScreen, NewPasswordScreen } from './components/AuthScreen';
+import RecurringManager from './components/RecurringManager';
+import CategoryEditor from './components/CategoryEditor';
+import { CategoryBudgetCard, CategoryBudgetForm } from './components/CategoryBudget';
+import MonthlyTrend from './components/MonthlyTrend';
+import ExportForm from './components/ExportForm';
+import SettingsMenu from './components/SettingsMenu';
+import { CategoriesContext, resolveCategories } from './lib/categories';
 
 const thisMonth = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
 
@@ -73,6 +80,13 @@ export default function App() {
     return sumByType(filterByOwner(allTx.filter((t) => t.date?.startsWith(k)), members, whoValid)).exp;
   }, [allTx, ym, members, whoValid]);
   const expenses = useMemo(() => viewTx.filter((t) => t.type !== 'income'), [viewTx]);
+  const whoTx = useMemo(() => filterByOwner(allTx, members, whoValid), [allTx, members, whoValid]);
+  const cats = useMemo(() => resolveCategories(ledger.categories), [ledger.categories]);
+  const categoryCounts = useMemo(() => {
+    const c = {};
+    for (const t of allTx) { const k = `${t.type}:${t.category}`; c[k] = (c[k] || 0) + 1; }
+    return c;
+  }, [allTx]);
   const whoLabel = whoValid === 'all' ? '' : whoValid === SHARED ? '공동' : findMember(members, whoValid)?.name || '';
 
   // 이 기기를 쓰는 사람 (기기마다 저장). 로그인 사용자가 바뀌면 다시 읽음
@@ -114,6 +128,19 @@ export default function App() {
         show('삭제했어요' + savedSuffix(synced, navigator.onLine !== false), undo);
       })
       .catch((e) => show(`삭제하지 못했어요 · ${koError(e)}`));
+  };
+
+  // 공통: 설정 저장 후 결과 알림
+  const notifySaved = (p, msg) => p
+    .then(({ synced }) => show(msg + savedSuffix(synced, navigator.onLine !== false)))
+    .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+
+  // 반복 내역은 시트를 닫지 않고 바로바로 저장
+  const saveRecurring = (rules, msg) => notifySaved(ledger.saveSetting('recurring', rules), msg);
+  const saveCatBudgets = (value) => { closeSheet(); notifySaved(ledger.saveSetting('catBudgets', value), '카테고리별 예산을 저장했어요'); };
+  const saveCategories = (cats, renames) => {
+    closeSheet();
+    notifySaved(ledger.saveCategories(cats, renames), renames.length ? '카테고리를 저장하고 기존 내역도 바꿨어요' : '카테고리를 저장했어요');
   };
 
   const saveMembers = (list, me) => {
@@ -164,7 +191,7 @@ export default function App() {
   const editing = sheet?.kind === 'edit' ? allTx.find((t) => t.id === sheet.id) : null;
 
   return (
-    <>
+    <CategoriesContext.Provider value={cats}>
       <div className="app">
         <Header
           status={ledger.status}
@@ -174,6 +201,7 @@ export default function App() {
           email={auth.user.email}
           onSignOut={handleSignOut}
           onSync={ledger.syncNow}
+          onMenu={() => setSheet({ kind: 'menu' })}
         />
 
         <InstallBanner />
@@ -212,9 +240,11 @@ export default function App() {
               <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
                 note={whoLabel ? '예산은 모두의 지출 합계 기준이에요.' : ''} />
               <CategoryDonut expenses={expenses} total={totals.exp} />
+              <CategoryBudgetCard catBudgets={ledger.catBudgets} monthTx={monthTx} onEdit={() => setSheet({ kind: 'catBudgets' })} />
+              <DailyChart list={viewTx} ym={ym} half />
+              <MonthlyTrend allTx={whoTx} ym={ym} onPick={setYm} label={whoLabel} />
               <MemberSummary list={monthTx} members={members} who={whoValid} onSelect={setWho}
                 onManage={() => setSheet({ kind: 'members' })} />
-              <DailyChart list={viewTx} ym={ym} />
             </section>
             <TxList
               members={members}
@@ -263,6 +293,33 @@ export default function App() {
         </Sheet>
       )}
 
+      {sheet?.kind === 'menu' && (
+        <Sheet title="설정" onClose={closeSheet}>
+          <SettingsMenu onOpen={(kind) => setSheet({ kind })}
+            counts={{ recurring: ledger.recurring.filter((r) => r.active).length, members: members.length, catBudgets: Object.keys(ledger.catBudgets).length }} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'recurring' && (
+        <Sheet title="반복 내역" onClose={closeSheet}>
+          <RecurringManager rules={ledger.recurring} members={members} onSave={saveRecurring} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'categories' && (
+        <Sheet title="카테고리 편집" onClose={closeSheet}>
+          <CategoryEditor counts={categoryCounts} onSave={saveCategories} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'catBudgets' && (
+        <Sheet title="카테고리별 예산" onClose={closeSheet}>
+          <CategoryBudgetForm catBudgets={ledger.catBudgets} monthTx={monthTx} onSave={saveCatBudgets} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'export' && (
+        <Sheet title="CSV 내보내기" onClose={closeSheet}>
+          <ExportForm allTx={allTx} members={members} ym={ym} onDone={(n) => { closeSheet(); show(`${n}건을 CSV로 내려받았어요`); }} />
+        </Sheet>
+      )}
+
       {sheet?.kind === 'members' && (
         <Sheet title="함께 쓰는 사람" onClose={closeSheet}>
           <MembersForm members={members} meId={meId} onSave={saveMembers} />
@@ -287,6 +344,6 @@ export default function App() {
       )}
 
       <Toast toast={toast} onHide={hide} />
-    </>
+    </CategoriesContext.Provider>
   );
 }

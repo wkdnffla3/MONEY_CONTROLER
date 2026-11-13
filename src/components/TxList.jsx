@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { SearchIcon } from './Icons';
-import { iconOf } from '../lib/categories';
+import { iconOf, useCategories } from '../lib/categories';
+import { isRecurringTxId } from '../lib/recurring';
 import { findMember, memberColor } from '../lib/members';
 import { WEEKDAYS, sumByType, todayStr, won } from '../lib/format';
 
@@ -26,6 +27,7 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
   }, [visible]);
 
   const today = todayStr();
+  const cats = useCategories();
 
   return (
     <section className="card" aria-label="내역">
@@ -73,10 +75,10 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(t.id); } }}
                 >
                   <div className="ic" style={{ background: isInc ? 'var(--income-soft)' : 'var(--surface-2)' }}>
-                    {iconOf(isInc ? 'income' : 'expense', t.category)}
+                    {iconOf(cats, isInc ? 'income' : 'expense', t.category)}
                   </div>
                   <div className="meta">
-                    <div className="cat">{t.category}</div>
+                    <div className="cat">{t.category}{isRecurringTxId(t.id) && <span className="rec-mark" title="반복 내역으로 자동 등록">🔁</span>}</div>
                     <div className="memo">
                       {members.length > 0 && (() => {
                         const m = findMember(members, t.memberId);

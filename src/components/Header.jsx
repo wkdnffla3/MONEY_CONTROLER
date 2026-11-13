@@ -9,7 +9,7 @@ function syncLabel({ status, online, syncing, pending }) {
   return ['ok', '저장됨'];
 }
 
-export default function Header({ status, online, syncing, pending, email, onSignOut, onSync }) {
+export default function Header({ status, online, syncing, pending, email, onSignOut, onSync, onMenu }) {
   const [cls, text] = syncLabel({ status, online, syncing, pending });
   const canRetry = online && pending > 0 && !syncing;
   return (
@@ -26,6 +26,11 @@ export default function Header({ status, online, syncing, pending, email, onSign
         )}
         {email && <span className="userchip">{email}</span>}
         {email && <button type="button" className="linkbtn" onClick={onSignOut}>로그아웃</button>}
+        {onMenu && (
+          <button type="button" className="iconbtn" onClick={onMenu} aria-label="설정 메뉴" title="설정">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
+          </button>
+        )}
       </div>
     </header>
   );
