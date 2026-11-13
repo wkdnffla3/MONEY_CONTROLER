@@ -106,10 +106,28 @@ const cleanSetting = (kind, v) => (SETTINGS[kind].valid(v) ? v : SETTINGS[kind].
 export const sanitizeSetting = cleanSetting;
 export const sanitizeMembers = (v) => cleanSetting('members', v);
 
+/** 장보기 물품 */
+export function isValidItem(i) {
+  return !!i && typeof i === 'object'
+    && isStr(i.name, 40) && !!i.name.trim()
+    && Number.isInteger(i.qty) && i.qty >= 1 && i.qty <= 999
+    && Number.isSafeInteger(i.price) && i.price >= 0 && i.price <= MAX_AMOUNT
+    && isStr(i.category, 20)
+    && (i.memberId == null || isStr(i.memberId, 64))
+    && typeof (i.memo ?? '') === 'string' && (i.memo ?? '').length <= 100
+    && typeof i.checked === 'boolean'
+    && (i.status === 'todo' || i.status === 'bought')
+    && (i.paid == null || isAmount(i.paid, 1))
+    && (i.txId == null || isStr(i.txId, 64))
+    && (i.boughtAt == null || (typeof i.boughtAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(i.boughtAt)));
+}
+
 export function isValidOp(o) {
   if (!o || typeof o !== 'object' || !isStr(String(o.opId ?? ''), 64)) return false;
   if (o.kind === 'upsert') return isStr(o.id, 64) && isValidTx(o.data);
   if (o.kind === 'delete') return isStr(o.id, 64);
+  if (o.kind === 'item') return isStr(o.id, 64) && isValidItem(o.data);
+  if (o.kind === 'itemDel') return isStr(o.id, 64);
   if (isSetting(o.kind)) return SETTINGS[o.kind].valid(o.value);
   return false;
 }
@@ -151,18 +169,20 @@ export const readCache = (uid) => {
   const c = read(cKey(uid), null, 'session') || read(cKey(uid), null, 'local');
   if (!c || typeof c !== 'object' || !c.tx || typeof c.tx !== 'object') return null;
   const tx = Object.fromEntries(Object.entries(c.tx).filter(([id, t]) => isStr(id, 64) && isValidTx(t)));
-  const out = { tx };
+  const items = c.items && typeof c.items === 'object'
+    ? Object.fromEntries(Object.entries(c.items).filter(([id, i]) => isStr(id, 64) && isValidItem(i))) : {};
+  const out = { tx, items };
   for (const k of Object.keys(SETTINGS)) out[k] = cleanSetting(k, c[k]);
   return out;
 };
 export const writeCache = (uid, state, remember) => {
   const kind = remember ? 'local' : 'session';
   remove(cKey(uid));
-  const data = { tx: state.tx, savedAt: Date.now() };
+  const data = { tx: state.tx, items: state.items, savedAt: Date.now() };
   for (const k of Object.keys(SETTINGS)) data[k] = state[k];
   return write(cKey(uid), data, kind);
 };
-export const EMPTY_STATE = Object.freeze({ tx: {}, ...Object.fromEntries(Object.entries(SETTINGS).map(([k, d]) => [k, d.empty])) });
+export const EMPTY_STATE = Object.freeze({ tx: {}, items: {}, ...Object.fromEntries(Object.entries(SETTINGS).map(([k, d]) => [k, d.empty])) });
 
 /** 로그아웃 시 이 기기에서 해당 사용자의 가계부 데이터 삭제 */
 export const clearUserData = (uid) => { remove(cKey(uid)); remove(qKey(uid)); };
@@ -170,8 +190,10 @@ export const clearUserData = (uid) => { remove(cKey(uid)); remove(qKey(uid)); };
 // ---------- 목록 정리 ----------
 /** 새 작업을 목록에 넣으면서 같은 대상에 대한 이전 작업을 지움 */
 /** 두 작업이 같은 대상을 바꾸는지 (같은 내역 ID, 또는 같은 종류의 설정) */
-export const sameTarget = (a, b) =>
-  isSetting(a.kind) || isSetting(b.kind) ? a.kind === b.kind : a.id === b.id;
+// 대상 키: 설정은 종류별, 내역은 tx:ID, 장보기 물품은 item:ID (서로 섞이지 않게)
+const targetKey = (o) => (isSetting(o.kind) ? `set:${o.kind}`
+  : o.kind === 'item' || o.kind === 'itemDel' ? `item:${o.id}` : `tx:${o.id}`);
+export const sameTarget = (a, b) => targetKey(a) === targetKey(b);
 
 export function coalesce(queue, op) {
   return [...queue.filter((o) => !sameTarget(o, op)), op];
@@ -182,10 +204,12 @@ export const removeOp = (queue, opId) => queue.filter((o) => o.opId !== opId);
 
 /** 서버에서 받은 상태 { tx, budget, members, ... } 위에 아직 못 보낸 작업을 덮어서 화면용 상태를 만듦 */
 export function applyQueue(state, queue) {
-  const next = { ...EMPTY_STATE, ...state, tx: { ...state.tx } };
+  const next = { ...EMPTY_STATE, ...state, tx: { ...state.tx }, items: { ...(state.items || {}) } };
   for (const op of queue) {
     if (op.kind === 'upsert') next.tx[op.id] = op.data;
     else if (op.kind === 'delete') delete next.tx[op.id];
+    else if (op.kind === 'item') next.items[op.id] = op.data;
+    else if (op.kind === 'itemDel') delete next.items[op.id];
     else if (isSetting(op.kind)) next[op.kind] = op.value;
   }
   return next;
@@ -198,7 +222,9 @@ export function applyQueue(state, queue) {
 export function isSchemaError(err) {
   if (!err) return false;
   const code = String(err.code || '');
-  return code === '42703' || code === 'PGRST204' || /column .* does not exist|could not find the .* column/i.test(String(err.message || ''));
+  // 42703/PGRST204 = 없는 칸, 42P01/PGRST205 = 없는 테이블(005 전 장보기)
+  return code === '42703' || code === 'PGRST204' || code === '42P01' || code === 'PGRST205'
+    || /column .* does not exist|could not find the .* column|relation .* does not exist|could not find the table/i.test(String(err.message || ''));
 }
 
 // ---------- 오류 분류 ----------

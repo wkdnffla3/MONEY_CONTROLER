@@ -148,6 +148,29 @@ npm run dev                  # http://localhost:5173
 | `src/components/RecurringManager.jsx` · `CategoryEditor.jsx` · `CategoryBudget.jsx` · `MonthlyTrend.jsx` · `ExportForm.jsx` · `SettingsMenu.jsx` | 각 화면 |
 | `tests/features.test.mjs` | 반복 내역·CSV·검증 단위 테스트 (`npm test`) |
 
+## 장보기 목록
+
+**처음 한 번:** 이미 DB를 만든 프로젝트는 SQL Editor에서 `supabase/005_shopping.sql` 을 실행하세요. 실행 전에 배포해도 물품은 기기에 보관됐다가 업데이트되면 올라가요(결제 확정한 가계부 내역은 바로 저장돼요).
+
+| 기능 | 설명 |
+| --- | --- |
+| 페이지 | 위쪽 탭 "가계부 / 장보기". 주소 끝 `#shopping` 이나 홈 화면 아이콘 길게 누르기 → "장보기 목록"으로 바로 열림 |
+| 물품 | 빠른 추가(이름·예상 가격) 또는 자세히(수량·단가·카테고리·누가·메모). 눌러서 수정, ✕로 삭제(되돌리기 가능) |
+| 장바구니 | 체크하면 장바구니로 이동, 아래 결제 바에 개수·예상 합계 |
+| 결제 확정 | **한 건으로 합치기**(영수증 합계로 고칠 수 있음, 카테고리 하나) 또는 **물품별로 나누기**(각 물품 카테고리로 따로 기록). 결제일·누가 선택. 가계부 내역에 🛒 표시 |
+| 구매 기록 | 결제별로 묶어 표시. "다시 사기"로 살 것에 다시 넣기, "기록 지우기"(가계부 내역은 남음) |
+
+**가계부에 두 번 기록되지 않는 이유**
+- 합치기: 내역 ID = `shop-<결제ID>`(확정 버튼을 누를 때 한 번 만들어짐). 물품별: 내역 ID = `shop-<물품ID>`.
+- 오프라인 재전송, 응답 유실, 버튼 두 번 누르기에도 같은 ID라 서버에는 한 번만 저장돼요.
+- 확정과 동시에 물품이 "구매 완료"로 바뀌어 다시 확정 대상이 되지 않아요.
+
+| 파일 | 역할 |
+| --- | --- |
+| `src/lib/shopping.js` | 합계, 결제 확정 계획(내역·물품 갱신), 구매 기록 묶기 |
+| `src/components/ShoppingPage.jsx` · `ShopItemForm.jsx` · `PurchaseConfirm.jsx` · `NavTabs.jsx` | 화면 |
+| `supabase/005_shopping.sql` | `shopping_items` 테이블 + 본인만 접근(RLS) + 실시간 |
+
 ## DB 값 제한
 
 `schema.sql` 에 금액(1 ~ 99억 9999만), 예산, 메모(100자), 카테고리(20자), ID(64자) 범위 제한이 들어 있습니다. 앱을 거치지 않고 API를 직접 호출해도 서버가 거부해요. **이미 `schema.sql`을 실행한 프로젝트**는 `supabase/002_hardening.sql` 을 SQL Editor에서 한 번 실행하세요.
