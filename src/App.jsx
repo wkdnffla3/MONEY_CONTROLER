@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { newId, useLedger } from './hooks/useLedger';
 import { useToast } from './hooks/useToast';
@@ -33,6 +33,14 @@ import MonthlyTrend from './components/MonthlyTrend';
 import ExportForm from './components/ExportForm';
 import SettingsMenu from './components/SettingsMenu';
 import { CategoriesContext, resolveCategories } from './lib/categories';
+import NavTabs from './components/NavTabs';
+import ShoppingPage from './components/ShoppingPage';
+import ShopItemForm from './components/ShopItemForm';
+import PurchaseConfirm from './components/PurchaseConfirm';
+import { summarize as summarizeShopping } from './lib/shopping';
+
+// 페이지: 주소 끝이 #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
+const pageFromHash = () => (window.location.hash === '#shopping' ? 'shopping' : 'ledger');
 
 const thisMonth = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
 
@@ -53,6 +61,15 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [who, setWho] = useState('all'); // 보기 기준: 'all' | 'shared' | 사람 id
   const [meId, setMeId] = useState(null); // 이 기기를 쓰는 사람
+  const [page, setPage] = useState(pageFromHash);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  useEffect(() => {
+    const onHash = () => setPage(pageFromHash());
+    window.addEventListener('popstate', onHash);
+    window.addEventListener('hashchange', onHash);
+    return () => { window.removeEventListener('popstate', onHash); window.removeEventListener('hashchange', onHash); };
+  }, []);
   const [sheet, setSheet] = useState(() => (openedFromAddShortcut() ? { kind: 'add' } : null)); // { kind: 'add' } | { kind: 'edit', id } | { kind: 'budget' }
   const closeSheet = useCallback(() => setSheet(null), []);
   const { online } = ledger;
@@ -99,7 +116,7 @@ export default function App() {
   // ---- 키보드 ←/→ 로 달 이동 ----
   useEffect(() => {
     const onKey = (e) => {
-      if (sheet || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+      if (sheet || pageRef.current !== 'ledger' || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
       if (e.key === 'ArrowLeft') setYm(prevMonth);
       if (e.key === 'ArrowRight') setYm(nextMonth);
     };
@@ -117,6 +134,46 @@ export default function App() {
     ledger.saveTx(id, data)
       .then(({ synced }) => show(label + savedSuffix(synced, navigator.onLine !== false)))
       .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+  };
+
+  // ---- 장보기 ----
+  const shopItems = ledger.items;
+  const shopSummary = useMemo(() => summarizeShopping(Object.values(shopItems)), [shopItems]);
+  const changePage = (p) => {
+    setPage(p);
+    closeSheet();
+    if (p === 'shopping') window.history.pushState(null, '', `${window.location.pathname}#shopping`);
+    else window.history.pushState(null, '', window.location.pathname);
+    window.scrollTo(0, 0);
+  };
+  const shop = {
+    add: (data) => notifySaved(ledger.saveItem(newId(), data), `${data.name} 추가했어요`),
+    open: (id) => setSheet({ kind: 'item', id }),
+    toggle: (id) => {
+      const it = shopItems[id];
+      if (it) ledger.saveItem(id, { ...it, checked: !it.checked }).catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+    },
+    remove: (id) => {
+      const it = shopItems[id];
+      closeSheet();
+      ledger.deleteItems([id])
+        .then(() => show(`${it?.name || '물품'} 삭제했어요`, it ? () => ledger.saveItem(id, it).catch(() => {}) : undefined))
+        .catch((e) => show(`삭제하지 못했어요 · ${koError(e)}`));
+    },
+    confirm: () => setSheet({ kind: 'purchase' }),
+    rebuy: (list) => notifySaved(ledger.updateItems(list.map((i, k) => ({
+      id: newId(),
+      data: { name: i.name, qty: i.qty, price: i.price, category: i.category, memberId: i.memberId ?? null, memo: i.memo || '',
+        checked: false, status: 'todo', paid: null, txId: null, boughtAt: null, createdAt: Date.now() + k },
+    }))), `${list.length}개를 살 것에 다시 넣었어요`),
+    removeHistory: (ids) => notifySaved(ledger.deleteItems(ids), '구매 기록을 지웠어요'),
+  };
+  const saveShopItem = (id, data) => { closeSheet(); notifySaved(ledger.saveItem(id, data), id in shopItems ? '수정했어요' : `${data.name} 추가했어요`); };
+  const confirmPurchase = (cartIds, opts) => {
+    closeSheet();
+    ledger.confirmPurchase(cartIds, opts)
+      .then(({ synced, count }) => show(`가계부에 ${count}건 기록했어요` + savedSuffix(synced, navigator.onLine !== false)))
+      .catch((e) => show(`기록하지 못했어요 · ${koError(e)}`));
   };
 
   const deleteTx = (id) => {
@@ -226,6 +283,11 @@ export default function App() {
           </div>
         )}
 
+        <NavTabs page={page} onChange={changePage} todoCount={shopSummary.todo - shopSummary.cart} cartCount={shopSummary.cart} />
+
+        {page === 'shopping' ? (
+          <ShoppingPage items={shopItems} members={members} defaultMemberId={meId} actions={shop} />
+        ) : (
         <div className="layout">
           <main className="grid">
             <MonthBar
@@ -263,11 +325,36 @@ export default function App() {
               members={members} defaultMemberId={formDefaultMember} onSubmit={(d) => saveTx(newId(), d, false)} />
           </aside>
         </div>
+        )}
       </div>
 
-      <button type="button" className="fab" onClick={() => setSheet({ kind: 'add' })} aria-label="내역 추가">
+      <button type="button" className={`fab ${page === 'shopping' ? 'fab-shop' : ''}`}
+        onClick={() => setSheet({ kind: page === 'shopping' ? 'item' : 'add' })} aria-label={page === 'shopping' ? '물품 추가' : '내역 추가'}>
         <PlusIcon />
       </button>
+
+      {sheet?.kind === 'item' && (
+        <Sheet title={sheet.id ? '물품 수정' : '물품 추가'} onClose={closeSheet}>
+          <ShopItemForm
+            key={sheet.id || 'new'}
+            initial={sheet.id ? shopItems[sheet.id] : null}
+            members={members}
+            defaultMemberId={meId}
+            onSubmit={(d) => saveShopItem(sheet.id || newId(), d)}
+            onDelete={sheet.id ? () => shop.remove(sheet.id) : undefined}
+          />
+        </Sheet>
+      )}
+      {sheet?.kind === 'purchase' && (() => {
+        const cartItems = Object.entries(shopItems).filter(([, i]) => i.status === 'todo' && i.checked)
+          .map(([id, i]) => ({ id, ...i })).sort((a, b) => a.createdAt - b.createdAt);
+        return cartItems.length > 0 && (
+          <Sheet title={`결제 확정 · ${cartItems.length}개`} onClose={closeSheet}>
+            <PurchaseConfirm items={cartItems} members={members} defaultMemberId={meId}
+              onConfirm={(opts) => confirmPurchase(cartItems.map((i) => i.id), opts)} />
+          </Sheet>
+        );
+      })()}
 
       {sheet?.kind === 'add' && (
         <Sheet title="내역 추가" onClose={closeSheet}>

@@ -5,6 +5,7 @@ import {
   readQueue, removeOp, sameTarget, sanitizeSetting, writeCache, writeQueue,
 } from '../lib/outbox';
 import { planRecurring, ymOf } from '../lib/recurring';
+import { planPurchase } from '../lib/shopping';
 import { useOnline } from './useOnline';
 
 export { newId };
@@ -36,6 +37,27 @@ const toRow = (id, userId, t, legacy) => {
 };
 
 const TX_COLS = 'id,type,amount,category,memo,date,created_at';
+const ITEM_COLS = 'id,name,qty,price,category,member_id,memo,checked,status,paid,tx_id,bought_at,created_at';
+
+const fromItemRow = (r) => ({
+  name: r.name,
+  qty: Number(r.qty) || 1,
+  price: Number(r.price) || 0,
+  category: r.category,
+  memberId: r.member_id ?? null,
+  memo: r.memo || '',
+  checked: !!r.checked,
+  status: r.status === 'bought' ? 'bought' : 'todo',
+  paid: r.paid == null ? null : Number(r.paid),
+  txId: r.tx_id ?? null,
+  boughtAt: r.bought_at ?? null,
+  createdAt: Number(r.created_at) || 0,
+});
+const toItemRow = (id, userId, i) => ({
+  id, user_id: userId, name: i.name, qty: i.qty, price: i.price, category: i.category, member_id: i.memberId ?? null,
+  memo: i.memo || '', checked: i.checked, status: i.status, paid: i.paid ?? null, tx_id: i.txId ?? null,
+  bought_at: i.boughtAt ?? null, created_at: i.createdAt,
+});
 // 설정 칸: DB 업데이트 단계별로 있는 칸이 다름. 최신부터 시도해서 되는 것으로 불러옴
 const SETTINGS_COL_SETS = [
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets'], // 004 적용
@@ -117,7 +139,7 @@ export function useLedger(userId) {
     const seq = ++loadSeq.current;
     const startedAt = Date.now();
     setStatus((s) => (s === 'ok' ? 'ok' : 'loading'));
-    let txRes, stRes, txLegacy = false, setLevel = 0;
+    let txRes, stRes, itRes, txLegacy = false, setLevel = 0, noItemsTable = false;
     try {
       // 내역: member_id 칸이 없으면(003 전) 예전 칸만으로
       const loadTx = async () => {
@@ -134,7 +156,13 @@ export function useLedger(userId) {
         }
         return { data: null, error: null };
       };
-      [txRes, stRes] = await Promise.all([loadTx(), loadSettings()]);
+      // 장보기: 테이블이 없으면(005 전) 기기에 있던 목록을 그대로 둠
+      const loadItems = async () => {
+        const r = await supabase.from('shopping_items').select(ITEM_COLS);
+        if (isSchemaError(r.error)) { noItemsTable = true; return { data: null, error: null }; }
+        return r;
+      };
+      [txRes, stRes, itRes] = await Promise.all([loadTx(), loadSettings(), loadItems()]);
     } catch (e) {
       txRes = { error: e };
     }
@@ -147,8 +175,11 @@ export function useLedger(userId) {
       return;
     }
     legacyRef.current = txLegacy;
-    setSchemaOutdated(txLegacy || setLevel > 0);
-    const next = { ...EMPTY_STATE, tx: Object.fromEntries(txRes.data.map((r) => [r.id, fromRow(r)])) };
+    setSchemaOutdated(txLegacy || setLevel > 0 || noItemsTable);
+    const items = itRes?.data && !itRes.error
+      ? Object.fromEntries(itRes.data.map((r) => [r.id, fromItemRow(r)]))
+      : serverRef.current.items || {}; // 못 받았으면 기존 목록 유지
+    const next = { ...EMPTY_STATE, tx: Object.fromEntries(txRes.data.map((r) => [r.id, fromRow(r)])), items };
     for (const [col, val] of Object.entries(stRes?.data || {})) {
       const kind = KIND_BY_COLUMN[col];
       if (kind) next[kind] = sanitizeSetting(kind, kind === 'budget' ? Number(val) || 0 : val);
@@ -167,6 +198,8 @@ export function useLedger(userId) {
       let req;
       if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current));
       else if (op.kind === 'delete') req = supabase.from('transactions').delete().eq('id', op.id);
+      else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data));
+      else if (op.kind === 'itemDel') req = supabase.from('shopping_items').delete().eq('id', op.id);
       else if (SETTINGS[op.kind]) req = supabase.from('settings').upsert({ user_id: userId, [SETTINGS[op.kind].column]: op.value });
       else return { error: null };
       // 응답이 끝없이 안 오면(불안정한 와이파이 등) 전송 전체가 멈추지 않도록 제한 시간을 둠
@@ -299,6 +332,7 @@ export function useLedger(userId) {
       .channel(`ledger-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter }, load)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, load)
       .subscribe();
 
     const onVisible = () => {
@@ -410,6 +444,27 @@ export function useLedger(userId) {
     return enqueueMany(ops);
   }, [enqueueMany]);
 
+  // ---- 장보기 ----
+  const saveItem = useCallback((id, data) => enqueue({ opId: newId(), kind: 'item', id, data }), [enqueue]);
+  const deleteItems = useCallback((ids) => enqueueMany(ids.map((id) => ({ opId: newId(), kind: 'itemDel', id }))), [enqueueMany]);
+  const updateItems = useCallback((list) => enqueueMany(list.map(({ id, data }) => ({ opId: newId(), kind: 'item', id, data }))), [enqueueMany]);
+  /**
+   * 결제 확정: 가계부 내역 + 물품 '구매 완료'를 한 번에 목록에 넣음.
+   * 내역 ID가 고정이라 재전송·두 번 누르기에도 가계부에는 한 번만 기록됨 (lib/shopping.js 참고).
+   */
+  const confirmPurchase = useCallback((itemIds, opts) => {
+    const v = viewRef.current;
+    const items = itemIds.map((id) => (v.items[id] ? { id, ...v.items[id] } : null)).filter((i) => i && i.status === 'todo');
+    if (!items.length) return Promise.resolve({ synced: true, count: 0 });
+    const plan = planPurchase(items, { purchaseId: newId(), ...opts });
+    const strip = ({ id: _omit, ...rest }) => rest;
+    const ops = [
+      ...plan.txs.map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data })),
+      ...plan.items.map(({ id, data }) => ({ opId: newId(), kind: 'item', id, data: strip(data) })),
+    ];
+    return enqueueMany(ops).then((r) => ({ ...r, count: plan.txs.length }));
+  }, [enqueueMany]);
+
   // ---- 반복 내역 자동 등록 ----
   // 이번 접속에서 서버 데이터를 받은 뒤에만 실행 (오래된 캐시 기준으로 지운 내역을 다시 만들지 않도록).
   // 등록 후 규칙의 last가 올라가므로 이 효과가 다시 돌아도 같은 달을 또 만들지 않음.
@@ -427,6 +482,7 @@ export function useLedger(userId) {
     tx: view.tx,
     budget: view.budget,
     members: view.members,
+    items: view.items,
     recurring: view.recurring,
     categories: view.categories,
     catBudgets: view.catBudgets,
@@ -445,6 +501,10 @@ export function useLedger(userId) {
     saveMembers,
     saveSetting,
     saveCategories,
+    saveItem,
+    updateItems,
+    deleteItems,
+    confirmPurchase,
     reload: load,
     syncNow: flush,
   };

@@ -337,3 +337,76 @@ button.sync:hover{background:var(--surface-2);color:var(--ink)}
 .export-sum{display:flex;align-items:baseline;gap:10px;padding:12px 14px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
 .export-sum b{font-size:18px}
 .export-sum span{font-size:13px;color:var(--muted)}
+
+/* ---- 페이지 탭 ---- */
+.nav-tabs{display:flex;gap:4px;background:var(--surface-2);border:1px solid var(--line);border-radius:14px;padding:4px;margin-bottom:14px}
+.nav-tabs button{flex:1;padding:10px 12px;border-radius:10px;font-weight:600;font-size:15px;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.nav-tabs button[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.nav-tabs .badge{font-size:11.5px;font-weight:700;background:var(--accent);color:#fff;border-radius:99px;padding:0 7px;line-height:18px}
+@media (prefers-color-scheme: dark){.nav-tabs .badge{color:#10201a}}
+@media (min-width:1024px){ .nav-tabs{max-width:360px} }
+
+/* ---- 장보기 ---- */
+.shop{max-width:760px;display:grid;gap:14px;padding-bottom:84px}
+.shop-sum{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.shop-sum > div{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:12px 14px;box-shadow:var(--shadow)}
+.shop-sum .k{display:block;font-size:12.5px;color:var(--muted)}
+.shop-sum b{font-size:19px}
+.shop-sum .hint{grid-column:1/-1}
+.quick-add{display:grid;grid-template-columns:1fr 130px auto;gap:8px;padding:12px}
+.quick-add > input{padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:15px;min-width:0}
+.quick-add > input:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+@media (max-width:480px){ .quick-add{grid-template-columns:1fr 110px} .quick-add .btn{grid-column:1/-1} }
+.shop-list{list-style:none}
+.shop-row{display:grid;grid-template-columns:30px 1fr auto 32px;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--line)}
+.shop-row:last-child{border-bottom:0}
+.shop-row .check{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);display:grid;place-items:center;color:#fff;background:var(--surface);transition:all .12s}
+.shop-row .check:hover{border-color:var(--accent)}
+.shop-row.in-cart .check{background:var(--accent);border-color:var(--accent)}
+@media (prefers-color-scheme: dark){ .shop-row.in-cart .check{color:#10201a} }
+.shop-row .body{text-align:left;min-width:0;display:grid;padding:2px 0}
+.shop-row .nm{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shop-row.in-cart .nm{color:var(--muted)}
+.shop-row .qty{font-size:12.5px;font-weight:500;color:var(--muted);margin-left:5px}
+.shop-row .sub{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center}
+.shop-row .pr{font-size:14px;font-weight:600}
+.shop-row .pr.unset{font-family:inherit;font-size:12px;font-weight:400;color:var(--muted)}
+.shop-row .del{color:var(--muted)}
+.shop-row .del:hover{color:var(--expense);background:var(--expense-soft)}
+.history{list-style:none;display:grid}
+.history li{padding:10px 0;border-bottom:1px solid var(--line)}
+.history .top{display:flex;justify-content:space-between;font-size:13.5px}
+.history .top .num{font-weight:600}
+.history .names{font-size:12.5px;color:var(--muted);margin:2px 0 2px}
+.history .acts{display:flex;gap:2px;margin-left:-6px}
+.cart-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));width:min(728px, calc(100vw - 32px));display:flex;align-items:center;gap:12px;
+  background:var(--ink);color:var(--surface);border-radius:16px;padding:10px 10px 10px 18px;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:25}
+.cart-bar .txt{flex:1;display:grid;line-height:1.3}
+.cart-bar .txt span{font-size:12.5px;opacity:.75}
+@media (min-width:1024px){ .cart-bar{left:calc(50% - 210px)} }
+.fab-shop{bottom:calc(92px + env(safe-area-inset-bottom))}
+.stepper{display:grid;grid-template-columns:40px 1fr 40px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface-2)}
+.stepper button{font-size:18px;font-weight:600;color:var(--ink)}
+.stepper button:disabled{opacity:.3}
+.stepper input{text-align:center;border:0!important;border-radius:0!important;background:transparent!important;font-family:'IBM Plex Mono',monospace;font-weight:600;padding:10px 0!important;min-width:0}
+.typeswitch.plain button[aria-pressed="true"]{background:var(--surface)!important;color:var(--ink)!important;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.confirm-items{list-style:none;display:grid;gap:6px;max-height:34vh;overflow:auto;padding:2px}
+.confirm-items li{display:grid;grid-template-columns:1fr 140px;gap:10px;align-items:center}
+.confirm-items .nm{font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.confirm-items small{color:var(--muted)}
+
+/* 금액 입력칸: .field 밖(빠른 추가·카테고리별 예산·결제 확정)에서도 같은 모양 */
+.amount-input{position:relative;min-width:0}
+.amount-input input{width:100%;padding:11px 36px 11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink)}
+.amount-input input:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+.amount-input.sm input{font-size:15px;padding:9px 30px 9px 10px}
+.amount-input.sm span{right:10px;font-size:13px}
+
+/* 결제 바: 목록 열 아래에 붙어 따라오게 (데스크톱에서도 열과 정렬) */
+.cart-bar{position:sticky;left:auto;transform:none;width:auto;bottom:calc(16px + env(safe-area-inset-bottom))}
+@media (min-width:1024px){ .cart-bar{left:auto} }
+.shop{padding-bottom:24px}
+/* 결제 바가 있을 땐 알림을 그 위로 */
+body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
+@media (max-width:639px){ body:has(.cart-bar) .toast{bottom:calc(160px + env(safe-area-inset-bottom))} body:has(.cart-bar) .fab-shop{bottom:calc(92px + env(safe-area-inset-bottom))} }
+.shop-sum b{white-space:nowrap;font-size:clamp(15px, 4.4vw, 19px)}
