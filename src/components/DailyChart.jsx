@@ -1,7 +1,7 @@
 import { useMemo, useRef } from 'react';
 import { WEEKDAYS, daysInMonth, isCurrentMonth, won } from '../lib/format';
 
-export default function DailyChart({ list, ym }) {
+export default function DailyChart({ list, ym, half = false }) {
   const tipRef = useRef(null);
   const days = daysInMonth(ym.y, ym.m);
   const current = isCurrentMonth(ym);
@@ -36,7 +36,7 @@ export default function DailyChart({ list, ym }) {
   const onLeave = () => { if (tipRef.current) tipRef.current.style.opacity = 0; };
 
   return (
-    <div className="card wide">
+    <div className={`card ${half ? '' : 'wide'}`}>
       <h2>
         일별 지출
         {total > 0 && <span className="num" style={{ fontSize: 12, fontWeight: 500 }}>하루 평균 {won(total / elapsed)}</span>}

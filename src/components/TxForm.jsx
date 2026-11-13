@@ -1,5 +1,5 @@
 import { useId, useRef, useState } from 'react';
-import { CATEGORIES } from '../lib/categories';
+import { useCategories } from '../lib/categories';
 import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount } from '../lib/format';
 
@@ -17,7 +17,8 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
   const amountRef = useRef(null);
   const [type, setType] = useState(initial?.type || 'expense');
   const [amount, setAmount] = useState(initial ? formatAmountInput(initial.amount) : '');
-  const [category, setCategory] = useState(initial?.category || CATEGORIES.expense[0][0]);
+  const CATS = useCategories();
+  const [category, setCategory] = useState(initial?.category || CATS.expense[0].name);
   const [date, setDate] = useState(initial?.date || defaultDate);
   const [memo, setMemo] = useState(initial?.memo || '');
   // 누가: 등록된 사람 id 또는 null(공동). 삭제된 사람이 지정돼 있던 내역은 공동으로 보임
@@ -27,12 +28,15 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false); // 저장 버튼 연타로 같은 내역이 두 번 만들어지는 것 방지
 
-  const cats = CATEGORIES[type];
-  const activeCategory = cats.some((c) => c[0] === category) ? category : cats[0][0];
+  // 수정 중인 내역의 카테고리가 삭제된 경우에도 그대로 보이게(말없이 바뀌지 않게) 목록 끝에 붙여 둠
+  const cats = initial && initial.type === type && !CATS[type].some((c) => c.name === initial.category)
+    ? [...CATS[type], { name: initial.category, icon: '📦' }]
+    : CATS[type];
+  const activeCategory = cats.some((c) => c.name === category) ? category : cats[0].name;
 
   const changeType = (t) => {
     setType(t);
-    if (!CATEGORIES[t].some((c) => c[0] === category)) setCategory(CATEGORIES[t][0][0]);
+    if (!CATS[t].some((c) => c.name === category)) setCategory(CATS[t][0].name);
   };
 
   const addQuick = (v) => {
@@ -101,7 +105,7 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
       <div className="field">
         <label>카테고리</label>
         <div className="chips">
-          {cats.map(([c, icon]) => (
+          {cats.map(({ name: c, icon }) => (
             <button key={c} type="button" className="chip" aria-pressed={c === activeCategory} onClick={() => setCategory(c)}>
               {icon} {c}
             </button>
