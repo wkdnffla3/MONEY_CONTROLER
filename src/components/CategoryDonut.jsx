@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
-import { colorOf } from '../lib/categories';
+import { colorOf, useCategories } from '../lib/categories';
 import { won } from '../lib/format';
 
 const R = 52;
 const C = 2 * Math.PI * R;
 
 export default function CategoryDonut({ expenses, total }) {
+  const cats = useCategories();
+  const color = (name) => colorOf(cats, name);
   const rows = useMemo(() => {
     const by = {};
     for (const t of expenses) by[t.category] = (by[t.category] || 0) + (Number(t.amount) || 0);
@@ -38,7 +40,7 @@ export default function CategoryDonut({ expenses, total }) {
             {rows.map(([cat, v]) => {
               const len = (v / total) * C;
               const el = (
-                <circle key={cat} r={R} cx="66" cy="66" fill="none" stroke={colorOf(cat)} strokeWidth="18"
+                <circle key={cat} r={R} cx="66" cy="66" fill="none" stroke={color(cat)} strokeWidth="18"
                   strokeDasharray={`${Math.max(0, len - gap)} ${C}`} strokeDashoffset={-offset}>
                   <title>{`${cat} ${won(v)}`}</title>
                 </circle>
@@ -52,7 +54,7 @@ export default function CategoryDonut({ expenses, total }) {
         <ul className="legend">
           {rows.map(([cat, v]) => (
             <li key={cat}>
-              <span className="sw" style={{ background: colorOf(cat) }} />
+              <span className="sw" style={{ background: color(cat) }} />
               <span className="nm">{cat} <span className="pc">{Math.round((v / total) * 100)}%</span></span>
               <span className="num" style={{ fontSize: 12.5 }}>{won(v)}</span>
             </li>

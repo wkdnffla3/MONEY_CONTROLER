@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRemember, supabase } from '../lib/supabase';
 import {
-  EMPTY_STATE, applyQueue, clearUserData, coalesce, isRetryable, isSchemaError, newId, queueStorageKey, readCache, readQueue,
-  removeOp, sameTarget, sanitizeMembers, writeCache, writeQueue,
+  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isRetryable, isSchemaError, newId, queueStorageKey, readCache,
+  readQueue, removeOp, sameTarget, sanitizeSetting, writeCache, writeQueue,
 } from '../lib/outbox';
+import { planRecurring, ymOf } from '../lib/recurring';
 import { useOnline } from './useOnline';
 
 export { newId };
@@ -35,6 +36,13 @@ const toRow = (id, userId, t, legacy) => {
 };
 
 const TX_COLS = 'id,type,amount,category,memo,date,created_at';
+// 설정 칸: DB 업데이트 단계별로 있는 칸이 다름. 최신부터 시도해서 되는 것으로 불러옴
+const SETTINGS_COL_SETS = [
+  ['budget', 'members', 'recurring', 'categories', 'cat_budgets'], // 004 적용
+  ['budget', 'members'],                                           // 003 적용
+  ['budget'],                                                      // 처음 스키마
+];
+const KIND_BY_COLUMN = Object.fromEntries(Object.entries(SETTINGS).map(([k, d]) => [d.column, k]));
 
 const RETRY_DELAYS = [3000, 10000, 30000, 60000];
 const SEND_TIMEOUT_MS = 10000; // 응답이 이보다 늦으면 실패로 보고 나중에 다시 보냄 (같은 ID라 중복 없음)
@@ -58,7 +66,9 @@ const hasPendingFor = (queue, op) => queue.some((o) => sameTarget(o, op));
 export function useLedger(userId) {
   const online = useOnline();
   const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
-  const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트(003) 필요
+  const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트(003/004) 필요
+  const [serverLoaded, setServerLoaded] = useState(false);     // 이번 접속에서 서버 데이터를 한 번 이상 받았는지
+  const [today, setToday] = useState(() => new Date().toDateString()); // 날짜가 바뀌면 반복 내역 확인
   const [queue, setQueue] = useState([]);                       // 아직 못 보낸 작업
   const [status, setStatus] = useState('idle');                 // idle | loading | ok | error
   const [error, setError] = useState(null);
@@ -68,7 +78,7 @@ export function useLedger(userId) {
   const memQueue = useRef([]);         // 메모리에 둔 보낼 목록 (기기 저장이 실패해도 이 탭에서는 유지)
   const storageBroken = useRef(false); // 기기 저장소에 쓰기 실패한 적이 있으면 메모리 목록을 기준으로 함
   const serverRef = useRef(EMPTY_STATE);
-  const legacyRef = useRef(false); // DB에 member_id/members 칸이 없음
+  const legacyRef = useRef(false); // DB에 transactions.member_id 칸이 없음 (003 전)
   const lockTimer = useRef(null);
   const flushPromise = useRef(null);
   const retryTimer = useRef(null);
@@ -107,24 +117,24 @@ export function useLedger(userId) {
     const seq = ++loadSeq.current;
     const startedAt = Date.now();
     setStatus((s) => (s === 'ok' ? 'ok' : 'loading'));
-    let txRes, stRes;
+    let txRes, stRes, txLegacy = false, setLevel = 0;
     try {
-      [txRes, stRes] = await Promise.all([
-        supabase.from('transactions').select(`${TX_COLS},member_id`),
-        supabase.from('settings').select('budget,members').maybeSingle(),
-      ]);
-      // DB 업데이트 전이면 예전 칸만으로 다시 불러와서 앱은 계속 쓸 수 있게 함
-      if (isSchemaError(txRes.error) || isSchemaError(stRes.error)) {
-        legacyRef.current = true;
-        setSchemaOutdated(true);
-        [txRes, stRes] = await Promise.all([
-          supabase.from('transactions').select(TX_COLS),
-          supabase.from('settings').select('budget').maybeSingle(),
-        ]);
-      } else if (!txRes.error) {
-        legacyRef.current = false;
-        setSchemaOutdated(false);
-      }
+      // 내역: member_id 칸이 없으면(003 전) 예전 칸만으로
+      const loadTx = async () => {
+        const r = await supabase.from('transactions').select(`${TX_COLS},member_id`);
+        if (!isSchemaError(r.error)) return r;
+        txLegacy = true;
+        return supabase.from('transactions').select(TX_COLS);
+      };
+      // 설정: 최신 칸 묶음부터 시도
+      const loadSettings = async () => {
+        for (let i = 0; i < SETTINGS_COL_SETS.length; i += 1) {
+          const r = await supabase.from('settings').select(SETTINGS_COL_SETS[i].join(',')).maybeSingle();
+          if (!isSchemaError(r.error)) { setLevel = i; return r; }
+        }
+        return { data: null, error: null };
+      };
+      [txRes, stRes] = await Promise.all([loadTx(), loadSettings()]);
     } catch (e) {
       txRes = { error: e };
     }
@@ -136,14 +146,19 @@ export function useLedger(userId) {
       setStatus('error');
       return;
     }
-    const tx = Object.fromEntries(txRes.data.map((r) => [r.id, fromRow(r)]));
-    const budget = stRes?.data ? Number(stRes.data.budget) || 0 : 0;
-    const members = sanitizeMembers(stRes?.data?.members);
+    legacyRef.current = txLegacy;
+    setSchemaOutdated(txLegacy || setLevel > 0);
+    const next = { ...EMPTY_STATE, tx: Object.fromEntries(txRes.data.map((r) => [r.id, fromRow(r)])) };
+    for (const [col, val] of Object.entries(stRes?.data || {})) {
+      const kind = KIND_BY_COLUMN[col];
+      if (kind) next[kind] = sanitizeSetting(kind, kind === 'budget' ? Number(val) || 0 : val);
+    }
     // 불러오는 사이에 전송이 끝난 작업은 응답에 빠져 있을 수 있으니 덧씌움
     const late = sentLog.current.filter((x) => x.at >= startedAt).map((x) => x.op);
-    updateServer(applyQueue({ tx, budget, members }, late));
+    updateServer(applyQueue(next, late));
     setError(null);
     setStatus('ok');
+    setServerLoaded(true);
   }, [userId, updateServer]);
 
   // ---- 작업 하나 전송 ----
@@ -152,8 +167,7 @@ export function useLedger(userId) {
       let req;
       if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current));
       else if (op.kind === 'delete') req = supabase.from('transactions').delete().eq('id', op.id);
-      else if (op.kind === 'budget') req = supabase.from('settings').upsert({ user_id: userId, budget: op.value });
-      else if (op.kind === 'members') req = supabase.from('settings').upsert({ user_id: userId, members: op.value });
+      else if (SETTINGS[op.kind]) req = supabase.from('settings').upsert({ user_id: userId, [SETTINGS[op.kind].column]: op.value });
       else return { error: null };
       // 응답이 끝없이 안 오면(불안정한 와이파이 등) 전송 전체가 멈추지 않도록 제한 시간을 둠
       return await withTimeout(Promise.resolve(req), SEND_TIMEOUT_MS);
@@ -192,8 +206,10 @@ export function useLedger(userId) {
         const { error: e } = await send(op);
         if (e) {
           if (isSchemaError(e)) {
-            if (!legacyRef.current) { legacyRef.current = true; setSchemaOutdated(true); continue; } // 예전 형식으로 한 번 더
-            skipped.add(op.opId);
+            setSchemaOutdated(true);
+            // 내역 저장이 member_id 때문에 실패했다면 예전 형식으로 한 번 더 (사람 없는 내역은 이걸로 저장됨)
+            if (op.kind === 'upsert' && !legacyRef.current) { legacyRef.current = true; continue; }
+            skipped.add(op.opId); // 업데이트되면 다음 시도에 올라감
             continue;
           }
           if (isRetryable(e)) {
@@ -261,6 +277,7 @@ export function useLedger(userId) {
     failed.current = new Map();
     storageBroken.current = false;
     setStorageFull(false);
+    setServerLoaded(false);
     if (!userId || !supabase) {
       memQueue.current = [];
       serverRef.current = EMPTY_STATE;
@@ -284,7 +301,12 @@ export function useLedger(userId) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter }, load)
       .subscribe();
 
-    const onVisible = () => { if (!document.hidden) { load(); flushRef.current(); } };
+    const onVisible = () => {
+      if (document.hidden) return;
+      setToday(new Date().toDateString());
+      load(); flushRef.current();
+    };
+    const dayTimer = setInterval(() => setToday(new Date().toDateString()), 60 * 60 * 1000);
     // 다른 탭이 목록을 바꾸면 따라감 (다른 탭이 전송을 끝낸 경우 서버 상태를 새로 받음)
     const onStorage = (e) => {
       if (e.key !== queueStorageKey(userId) || storageBroken.current) return;
@@ -300,6 +322,7 @@ export function useLedger(userId) {
     return () => {
       clearTimeout(retryTimer.current);
       clearTimeout(lockTimer.current);
+      clearInterval(dayTimer);
       supabase.removeChannel(channel);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('storage', onStorage);
@@ -328,6 +351,20 @@ export function useLedger(userId) {
     return { synced: !hasPendingFor(getQ(), op) };
   }, [getQ, setQ, flush]);
 
+  /** 여러 작업을 한 번에 목록에 넣고 한 번만 전송 (카테고리 이름 변경, 반복 내역 등록 등) */
+  const enqueueMany = useCallback(async (ops) => {
+    if (!ops.length) return { synced: true };
+    let q = getQ();
+    for (const op of ops) q = coalesce(q, op);
+    setQ(q);
+    await flush();
+    const errs = ops.map((o) => failed.current.get(o.opId)).filter(Boolean);
+    ops.forEach((o) => failed.current.delete(o.opId));
+    if (errs.length) throw errs[0];
+    const left = getQ();
+    return { synced: !ops.some((o) => hasPendingFor(left, o)) };
+  }, [getQ, setQ, flush]);
+
   /** 로그아웃 전에 호출: 이 기기에서 해당 사용자의 내역 캐시와 보낼 목록을 지움 */
   const clearLocalData = useCallback(() => {
     if (!userId) return;
@@ -348,14 +385,53 @@ export function useLedger(userId) {
     return { prev, ...result };
   }, [enqueue]);
 
-  const saveBudget = useCallback((value) => enqueue({ opId: newId(), kind: 'budget', value }), [enqueue]);
-  const saveMembers = useCallback((value) => enqueue({ opId: newId(), kind: 'members', value }), [enqueue]);
+  const saveSetting = useCallback((kind, value) => enqueue({ opId: newId(), kind, value }), [enqueue]);
+  const saveBudget = useCallback((value) => saveSetting('budget', value), [saveSetting]);
+  const saveMembers = useCallback((value) => saveSetting('members', value), [saveSetting]);
+
+  /**
+   * 카테고리 목록 저장. renames = [{ type, from, to }] 이면 그 카테고리의 기존 내역·반복 규칙·카테고리별 예산도 함께 바꿈.
+   * 내역은 ID별로 upsert라 여러 번 보내져도 중복되지 않음.
+   */
+  const saveCategories = useCallback((categories, renames = []) => {
+    const v = viewRef.current;
+    const ops = [{ opId: newId(), kind: 'categories', value: categories }];
+    if (renames.length) {
+      const map = (type, name) => renames.find((r) => r.type === type && r.from === name)?.to ?? name;
+      for (const [id, t] of Object.entries(v.tx)) {
+        const to = map(t.type, t.category);
+        if (to !== t.category) ops.push({ opId: newId(), kind: 'upsert', id, data: { ...t, category: to } });
+      }
+      const rec = v.recurring.map((r) => ({ ...r, category: map(r.type, r.category) }));
+      if (rec.some((r, i) => r.category !== v.recurring[i].category)) ops.push({ opId: newId(), kind: 'recurring', value: rec });
+      const cb = Object.fromEntries(Object.entries(v.catBudgets).map(([k, amt]) => [map('expense', k), amt]));
+      if (Object.keys(cb).join() !== Object.keys(v.catBudgets).join()) ops.push({ opId: newId(), kind: 'catBudgets', value: cb });
+    }
+    return enqueueMany(ops);
+  }, [enqueueMany]);
+
+  // ---- 반복 내역 자동 등록 ----
+  // 이번 접속에서 서버 데이터를 받은 뒤에만 실행 (오래된 캐시 기준으로 지운 내역을 다시 만들지 않도록).
+  // 등록 후 규칙의 last가 올라가므로 이 효과가 다시 돌아도 같은 달을 또 만들지 않음.
+  const recurringKey = JSON.stringify(view.recurring);
+  useEffect(() => {
+    if (!userId || !serverLoaded) return;
+    const plan = planRecurring(viewRef.current.recurring, new Date());
+    if (!plan.changed) return;
+    const ops = plan.txs.map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data }));
+    ops.push({ opId: newId(), kind: 'recurring', value: plan.rules });
+    enqueueMany(ops).catch(() => {});
+  }, [userId, serverLoaded, recurringKey, today, enqueueMany]);
 
   return {
     tx: view.tx,
     budget: view.budget,
     members: view.members,
+    recurring: view.recurring,
+    categories: view.categories,
+    catBudgets: view.catBudgets,
     schemaOutdated,
+    thisMonth: ymOf(new Date(today)),
     status,
     error,
     online,
@@ -367,6 +443,8 @@ export function useLedger(userId) {
     deleteTx,
     saveBudget,
     saveMembers,
+    saveSetting,
+    saveCategories,
     reload: load,
     syncNow: flush,
   };

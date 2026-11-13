@@ -19,7 +19,13 @@ create table if not exists public.settings (
   user_id  uuid primary key default auth.uid() references auth.users(id) on delete cascade,
   budget   bigint not null default 0 check (budget between 0 and 9999999999),
   members  jsonb not null default '[]'::jsonb
-           check (jsonb_typeof(members) = 'array' and jsonb_array_length(members) <= 10 and pg_column_size(members) <= 4096)
+           check (jsonb_typeof(members) = 'array' and jsonb_array_length(members) <= 10 and pg_column_size(members) <= 4096),
+  recurring jsonb not null default '[]'::jsonb
+           check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 50 and pg_column_size(recurring) <= 32768),
+  categories jsonb
+           check (categories is null or (jsonb_typeof(categories) = 'object' and pg_column_size(categories) <= 8192)),
+  cat_budgets jsonb not null default '{}'::jsonb
+           check (jsonb_typeof(cat_budgets) = 'object' and pg_column_size(cat_budgets) <= 8192)
 );
 
 -- 3) 행 단위 보안: 로그인한 본인 데이터만 읽고 쓸 수 있게
