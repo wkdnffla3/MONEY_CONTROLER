@@ -1,6 +1,6 @@
 import { daysInMonth, isCurrentMonth, won } from '../lib/format';
 
-export default function BudgetCard({ budget, exp, ym, onEdit }) {
+export default function BudgetCard({ budget, exp, ym, onEdit, note = '' }) {
   let body;
   if (!budget) {
     body = (
@@ -29,6 +29,7 @@ export default function BudgetCard({ budget, exp, ym, onEdit }) {
           <span style={{ width: `${Math.min(100, (exp / budget) * 100)}%` }} />
         </div>
         <div className="budget-foot">{foot}</div>
+        {note && <div className="budget-foot" style={{ marginTop: 4 }}>{note}</div>}
       </>
     );
   }

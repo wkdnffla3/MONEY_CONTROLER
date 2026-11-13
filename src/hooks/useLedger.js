@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRemember, supabase } from '../lib/supabase';
 import {
-  applyQueue, clearUserData, coalesce, isRetryable, newId, queueStorageKey, readCache, readQueue, removeOp, writeCache, writeQueue,
+  EMPTY_STATE, applyQueue, clearUserData, coalesce, isRetryable, isSchemaError, newId, queueStorageKey, readCache, readQueue,
+  removeOp, sameTarget, sanitizeMembers, writeCache, writeQueue,
 } from '../lib/outbox';
 import { useOnline } from './useOnline';
 
@@ -13,19 +14,27 @@ const fromRow = (r) => ({
   category: r.category,
   memo: r.memo || '',
   date: r.date,
+  memberId: r.member_id ?? null,
   createdAt: Number(r.created_at) || 0,
 });
 
-const toRow = (id, userId, t) => ({
-  id,
-  user_id: userId,
-  type: t.type,
-  amount: t.amount,
-  category: t.category,
-  memo: t.memo,
-  date: t.date,
-  created_at: t.createdAt,
-});
+// legacy=true: DB 업데이트(003) 전이라 member_id 칸이 없을 때. 사람이 지정된 내역은 업데이트 후에 보냄
+const toRow = (id, userId, t, legacy) => {
+  const row = {
+    id,
+    user_id: userId,
+    type: t.type,
+    amount: t.amount,
+    category: t.category,
+    memo: t.memo,
+    date: t.date,
+    created_at: t.createdAt,
+  };
+  if (!legacy || t.memberId) row.member_id = t.memberId ?? null;
+  return row;
+};
+
+const TX_COLS = 'id,type,amount,category,memo,date,created_at';
 
 const RETRY_DELAYS = [3000, 10000, 30000, 60000];
 const SEND_TIMEOUT_MS = 10000; // 응답이 이보다 늦으면 실패로 보고 나중에 다시 보냄 (같은 ID라 중복 없음)
@@ -37,8 +46,7 @@ const withTimeout = (promise, ms) => Promise.race([
 ]);
 
 // 같은 대상(같은 내역 ID, 또는 예산)에 대한 작업이 아직 목록에 남아 있는지
-const hasPendingFor = (queue, op) => queue.some((o) =>
-  op.kind === 'budget' ? o.kind === 'budget' : o.kind !== 'budget' && o.id === op.id);
+const hasPendingFor = (queue, op) => queue.some((o) => sameTarget(o, op));
 
 /**
  * 로그인한 사용자의 내역과 예산 — 오프라인 우선.
@@ -49,7 +57,8 @@ const hasPendingFor = (queue, op) => queue.some((o) =>
  */
 export function useLedger(userId) {
   const online = useOnline();
-  const [server, setServer] = useState({ tx: {}, budget: 0 }); // 서버(또는 캐시)에서 받은 상태
+  const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
+  const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트(003) 필요
   const [queue, setQueue] = useState([]);                       // 아직 못 보낸 작업
   const [status, setStatus] = useState('idle');                 // idle | loading | ok | error
   const [error, setError] = useState(null);
@@ -58,7 +67,8 @@ export function useLedger(userId) {
 
   const memQueue = useRef([]);         // 메모리에 둔 보낼 목록 (기기 저장이 실패해도 이 탭에서는 유지)
   const storageBroken = useRef(false); // 기기 저장소에 쓰기 실패한 적이 있으면 메모리 목록을 기준으로 함
-  const serverRef = useRef({ tx: {}, budget: 0 });
+  const serverRef = useRef(EMPTY_STATE);
+  const legacyRef = useRef(false); // DB에 member_id/members 칸이 없음
   const lockTimer = useRef(null);
   const flushPromise = useRef(null);
   const retryTimer = useRef(null);
@@ -88,7 +98,7 @@ export function useLedger(userId) {
   const updateServer = useCallback((next) => {
     serverRef.current = next;
     setServer(next);
-    if (userId) writeCache(userId, next.tx, next.budget, getRemember());
+    if (userId) writeCache(userId, next, getRemember());
   }, [userId]);
 
   // ---- 서버에서 불러오기 ----
@@ -100,9 +110,21 @@ export function useLedger(userId) {
     let txRes, stRes;
     try {
       [txRes, stRes] = await Promise.all([
-        supabase.from('transactions').select('id,type,amount,category,memo,date,created_at'),
-        supabase.from('settings').select('budget').maybeSingle(),
+        supabase.from('transactions').select(`${TX_COLS},member_id`),
+        supabase.from('settings').select('budget,members').maybeSingle(),
       ]);
+      // DB 업데이트 전이면 예전 칸만으로 다시 불러와서 앱은 계속 쓸 수 있게 함
+      if (isSchemaError(txRes.error) || isSchemaError(stRes.error)) {
+        legacyRef.current = true;
+        setSchemaOutdated(true);
+        [txRes, stRes] = await Promise.all([
+          supabase.from('transactions').select(TX_COLS),
+          supabase.from('settings').select('budget').maybeSingle(),
+        ]);
+      } else if (!txRes.error) {
+        legacyRef.current = false;
+        setSchemaOutdated(false);
+      }
     } catch (e) {
       txRes = { error: e };
     }
@@ -114,12 +136,12 @@ export function useLedger(userId) {
       setStatus('error');
       return;
     }
-    let tx = Object.fromEntries(txRes.data.map((r) => [r.id, fromRow(r)]));
-    let budget = stRes?.data ? Number(stRes.data.budget) || 0 : 0;
+    const tx = Object.fromEntries(txRes.data.map((r) => [r.id, fromRow(r)]));
+    const budget = stRes?.data ? Number(stRes.data.budget) || 0 : 0;
+    const members = sanitizeMembers(stRes?.data?.members);
     // 불러오는 사이에 전송이 끝난 작업은 응답에 빠져 있을 수 있으니 덧씌움
     const late = sentLog.current.filter((x) => x.at >= startedAt).map((x) => x.op);
-    ({ tx, budget } = applyQueue(tx, budget, late));
-    updateServer({ tx, budget });
+    updateServer(applyQueue({ tx, budget, members }, late));
     setError(null);
     setStatus('ok');
   }, [userId, updateServer]);
@@ -128,9 +150,10 @@ export function useLedger(userId) {
   const send = useCallback(async (op) => {
     try {
       let req;
-      if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data));
+      if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current));
       else if (op.kind === 'delete') req = supabase.from('transactions').delete().eq('id', op.id);
       else if (op.kind === 'budget') req = supabase.from('settings').upsert({ user_id: userId, budget: op.value });
+      else if (op.kind === 'members') req = supabase.from('settings').upsert({ user_id: userId, members: op.value });
       else return { error: null };
       // 응답이 끝없이 안 오면(불안정한 와이파이 등) 전송 전체가 멈추지 않도록 제한 시간을 둠
       return await withTimeout(Promise.resolve(req), SEND_TIMEOUT_MS);
@@ -160,12 +183,19 @@ export function useLedger(userId) {
         scheduleRetry(() => flushRef.current());
         return;
       }
+      // DB 업데이트 전이라 지금은 못 보내는 작업(사람 지정 내역, 사람 목록)은 건너뛰고 나머지를 계속 보냄.
+      // 서로 다른 대상끼리는 순서가 상관없고, 같은 대상은 목록에 하나만 있으므로 건너뛰어도 안전.
+      const skipped = new Set();
       for (;;) {
-        const q = getQ();
-        if (!q.length) break;
-        const op = q[0];
+        const op = getQ().find((o) => !skipped.has(o.opId));
+        if (!op) break;
         const { error: e } = await send(op);
         if (e) {
+          if (isSchemaError(e)) {
+            if (!legacyRef.current) { legacyRef.current = true; setSchemaOutdated(true); continue; } // 예전 형식으로 한 번 더
+            skipped.add(op.opId);
+            continue;
+          }
           if (isRetryable(e)) {
             scheduleRetry(() => flushRef.current());
             return;
@@ -177,12 +207,16 @@ export function useLedger(userId) {
           continue;
         }
         setQ(removeOp(getQ(), op.opId));
-        updateServer(applyQueue(serverRef.current.tx, serverRef.current.budget, [op]));
+        updateServer(applyQueue(serverRef.current, [op]));
         const now = Date.now();
         sentLog.current = [...sentLog.current.filter((x) => now - x.at < 60000), { at: now, op }];
       }
-      retryStep.current = 0;
-      clearTimeout(retryTimer.current);
+      if (skipped.size) {
+        scheduleRetry(() => flushRef.current()); // DB가 업데이트되면 다음 시도에 올라감
+      } else {
+        retryStep.current = 0;
+        clearTimeout(retryTimer.current);
+      }
       if (droppedAny) await load();
     };
 
@@ -229,12 +263,14 @@ export function useLedger(userId) {
     setStorageFull(false);
     if (!userId || !supabase) {
       memQueue.current = [];
-      serverRef.current = { tx: {}, budget: 0 };
+      serverRef.current = EMPTY_STATE;
       setServer(serverRef.current); setQueue([]); setStatus('idle'); setError(null);
       return undefined;
     }
     const cache = readCache(userId);
-    serverRef.current = cache || { tx: {}, budget: 0 };
+    serverRef.current = cache || EMPTY_STATE;
+    legacyRef.current = false;
+    setSchemaOutdated(false);
     setServer(serverRef.current);
     memQueue.current = readQueue(userId);
     setQueue(memQueue.current);
@@ -300,7 +336,7 @@ export function useLedger(userId) {
     setQueue([]);
   }, [userId]);
 
-  const view = useMemo(() => applyQueue(server.tx, server.budget, queue), [server, queue]);
+  const view = useMemo(() => applyQueue(server, queue), [server, queue]);
   const viewRef = useRef(view);
   viewRef.current = view;
 
@@ -313,10 +349,13 @@ export function useLedger(userId) {
   }, [enqueue]);
 
   const saveBudget = useCallback((value) => enqueue({ opId: newId(), kind: 'budget', value }), [enqueue]);
+  const saveMembers = useCallback((value) => enqueue({ opId: newId(), kind: 'members', value }), [enqueue]);
 
   return {
     tx: view.tx,
     budget: view.budget,
+    members: view.members,
+    schemaOutdated,
     status,
     error,
     online,
@@ -327,6 +366,7 @@ export function useLedger(userId) {
     saveTx,
     deleteTx,
     saveBudget,
+    saveMembers,
     reload: load,
     syncNow: flush,
   };

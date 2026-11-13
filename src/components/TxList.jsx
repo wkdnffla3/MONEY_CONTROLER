@@ -1,18 +1,20 @@
 import { useMemo } from 'react';
 import { SearchIcon } from './Icons';
 import { iconOf } from '../lib/categories';
+import { findMember, memberColor } from '../lib/members';
 import { WEEKDAYS, sumByType, todayStr, won } from '../lib/format';
 
 const FILTERS = [['all', '전체'], ['expense', '지출'], ['income', '수입']];
 
-export default function TxList({ items, filter, onFilter, query, onQuery, onOpen }) {
+export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [] }) {
   const visible = useMemo(() => {
     let list = items;
     if (filter !== 'all') list = list.filter((t) => (t.type === 'income') === (filter === 'income'));
     const q = query.trim().toLowerCase();
-    if (q) list = list.filter((t) => (t.memo || '').toLowerCase().includes(q) || (t.category || '').toLowerCase().includes(q));
+    if (q) list = list.filter((t) => (t.memo || '').toLowerCase().includes(q) || (t.category || '').toLowerCase().includes(q)
+      || (findMember(members, t.memberId)?.name || '').toLowerCase().includes(q));
     return [...list].sort((a, b) => (a.date === b.date ? (b.createdAt || 0) - (a.createdAt || 0) : a.date < b.date ? 1 : -1));
-  }, [items, filter, query]);
+  }, [items, filter, query, members]);
 
   const groups = useMemo(() => {
     const m = new Map();
@@ -37,7 +39,7 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
         <label className="search">
           <span className="sr">검색</span>
           <SearchIcon />
-          <input type="search" placeholder="메모·카테고리 검색" value={query} onChange={(e) => onQuery(e.target.value)} />
+          <input type="search" placeholder={members.length ? "메모·카테고리·이름 검색" : "메모·카테고리 검색"} value={query} onChange={(e) => onQuery(e.target.value)} />
         </label>
       </div>
 
@@ -75,7 +77,13 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
                   </div>
                   <div className="meta">
                     <div className="cat">{t.category}</div>
-                    <div className="memo">{t.memo || ' '}</div>
+                    <div className="memo">
+                      {members.length > 0 && (() => {
+                        const m = findMember(members, t.memberId);
+                        return <span className="who-badge"><span className="dot" style={{ background: memberColor(m) }} />{m ? m.name : '공동'}</span>;
+                      })()}
+                      {t.memo || (members.length ? '' : '\u00a0')}
+                    </div>
                   </div>
                   <div className={`amt num ${isInc ? 'inc' : ''}`}>{isInc ? '+' : '-'}{won(t.amount)}</div>
                 </div>

@@ -19,6 +19,10 @@ import TxForm from './components/TxForm';
 import BudgetForm from './components/BudgetForm';
 import Sheet from './components/Sheet';
 import Toast from './components/Toast';
+import MemberSummary from './components/MemberSummary';
+import MembersForm from './components/MembersForm';
+import WhoFilter from './components/WhoFilter';
+import { SHARED, filterByOwner, findMember, getMe, setMe } from './lib/members';
 import InstallBanner from './components/InstallBanner';
 import { PlusIcon } from './components/Icons';
 import { AuthScreen, NewPasswordScreen } from './components/AuthScreen';
@@ -40,6 +44,8 @@ export default function App() {
   const [ym, setYm] = useState(thisMonth);
   const [filter, setFilter] = useState('all');
   const [query, setQuery] = useState('');
+  const [who, setWho] = useState('all'); // 보기 기준: 'all' | 'shared' | 사람 id
+  const [meId, setMeId] = useState(null); // 이 기기를 쓰는 사람
   const [sheet, setSheet] = useState(() => (openedFromAddShortcut() ? { kind: 'add' } : null)); // { kind: 'add' } | { kind: 'edit', id } | { kind: 'budget' }
   const closeSheet = useCallback(() => setSheet(null), []);
   const { online } = ledger;
@@ -55,13 +61,25 @@ export default function App() {
     const k = ymKey(ym.y, ym.m);
     return allTx.filter((t) => typeof t.date === 'string' && t.date.startsWith(k));
   }, [allTx, ym]);
-  const totals = useMemo(() => sumByType(monthTx), [monthTx]);
+  const { members } = ledger;
+  // 보던 사람이 삭제되면 전체 보기로
+  const whoValid = who === 'all' || who === SHARED || members.some((m) => m.id === who) ? who : 'all';
+  const viewTx = useMemo(() => filterByOwner(monthTx, members, whoValid), [monthTx, members, whoValid]);
+  const totals = useMemo(() => sumByType(viewTx), [viewTx]);
+  const householdExp = useMemo(() => sumByType(monthTx).exp, [monthTx]);
   const prevExp = useMemo(() => {
     const p = prevMonth(ym);
     const k = ymKey(p.y, p.m);
-    return sumByType(allTx.filter((t) => t.date?.startsWith(k))).exp;
-  }, [allTx, ym]);
-  const expenses = useMemo(() => monthTx.filter((t) => t.type !== 'income'), [monthTx]);
+    return sumByType(filterByOwner(allTx.filter((t) => t.date?.startsWith(k)), members, whoValid)).exp;
+  }, [allTx, ym, members, whoValid]);
+  const expenses = useMemo(() => viewTx.filter((t) => t.type !== 'income'), [viewTx]);
+  const whoLabel = whoValid === 'all' ? '' : whoValid === SHARED ? '공동' : findMember(members, whoValid)?.name || '';
+
+  // 이 기기를 쓰는 사람 (기기마다 저장). 로그인 사용자가 바뀌면 다시 읽음
+  const uid = auth.user?.id;
+  useEffect(() => { setMeId(uid ? getMe(uid) : null); setWho('all'); }, [uid]);
+  // 새 내역의 기본 "누가": 특정 사람 보기 중이면 그 사람, 아니면 이 기기의 사람
+  const formDefaultMember = whoValid !== 'all' && whoValid !== SHARED ? whoValid : meId;
   const defaultDate = isCurrentMonth(ym) ? todayStr() : `${ym.y}-${pad(ym.m)}-01`;
 
   // ---- 키보드 ←/→ 로 달 이동 ----
@@ -96,6 +114,15 @@ export default function App() {
         show('삭제했어요' + savedSuffix(synced, navigator.onLine !== false), undo);
       })
       .catch((e) => show(`삭제하지 못했어요 · ${koError(e)}`));
+  };
+
+  const saveMembers = (list, me) => {
+    closeSheet();
+    if (uid) setMe(uid, me);
+    setMeId(me);
+    ledger.saveMembers(list)
+      .then(({ synced }) => show('함께 쓰는 사람을 저장했어요' + savedSuffix(synced, navigator.onLine !== false)))
+      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
   };
 
   const saveBudget = (value) => {
@@ -159,6 +186,12 @@ export default function App() {
         ) : ledger.status === 'error' && (
           <div className="notice show">내역을 불러오지 못했어요: {koError(ledger.error)}</div>
         )}
+        {ledger.schemaOutdated && (
+          <div className="notice show">
+            <b>DB 업데이트가 필요해요.</b> Supabase SQL Editor에서 <code>supabase/003_members.sql</code>을 실행해 주세요.
+            그 전까지 사람이 지정된 내역과 사람 목록은 이 기기에 보관됐다가, 업데이트되면 자동으로 올라가요.
+          </div>
+        )}
         {ledger.storageFull && (
           <div className="notice show">
             기기 저장 공간이 부족해요. 지금 입력은 계속 할 수 있지만, 서버에 올라가기 전에 이 탭을 닫으면 사라질 수 있어요.
@@ -173,14 +206,19 @@ export default function App() {
               onNext={() => setYm(nextMonth)}
               onToday={() => setYm(thisMonth())}
             />
-            <Summary inc={totals.inc} exp={totals.exp} prevExp={prevExp} />
+            <WhoFilter members={members} who={whoValid} onChange={setWho} />
+            <Summary inc={totals.inc} exp={totals.exp} prevExp={prevExp} who={whoLabel} />
             <section className="grid insights">
-              <BudgetCard budget={ledger.budget} exp={totals.exp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })} />
+              <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
+                note={whoLabel ? '예산은 모두의 지출 합계 기준이에요.' : ''} />
               <CategoryDonut expenses={expenses} total={totals.exp} />
-              <DailyChart list={monthTx} ym={ym} />
+              <MemberSummary list={monthTx} members={members} who={whoValid} onSelect={setWho}
+                onManage={() => setSheet({ kind: 'members' })} />
+              <DailyChart list={viewTx} ym={ym} />
             </section>
             <TxList
-              items={monthTx}
+              members={members}
+              items={viewTx}
               filter={filter}
               onFilter={setFilter}
               query={query}
@@ -191,7 +229,8 @@ export default function App() {
 
           <aside className="side-form card" aria-label="내역 추가">
             <h2 style={{ color: 'var(--ink)', fontSize: 16 }}>새 내역</h2>
-            <TxForm key={ymKey(ym.y, ym.m)} defaultDate={defaultDate} onSubmit={(d) => saveTx(newId(), d, false)} />
+            <TxForm key={`${ymKey(ym.y, ym.m)}-${meId}-${members.map((m) => m.id).join()}`} defaultDate={defaultDate}
+              members={members} defaultMemberId={formDefaultMember} onSubmit={(d) => saveTx(newId(), d, false)} />
           </aside>
         </div>
       </div>
@@ -202,7 +241,8 @@ export default function App() {
 
       {sheet?.kind === 'add' && (
         <Sheet title="내역 추가" onClose={closeSheet}>
-          <TxForm autoFocus defaultDate={defaultDate} onSubmit={(d) => saveTx(newId(), d, false)} />
+          <TxForm autoFocus defaultDate={defaultDate} members={members} defaultMemberId={formDefaultMember}
+            onSubmit={(d) => saveTx(newId(), d, false)} />
         </Sheet>
       )}
       {sheet?.kind === 'edit' && editing && (
@@ -210,6 +250,7 @@ export default function App() {
           <TxForm
             key={editing.id}
             initial={editing}
+            members={members}
             defaultDate={defaultDate}
             onSubmit={(d) => saveTx(editing.id, d, true)}
             onDelete={() => deleteTx(editing.id)}
@@ -219,6 +260,12 @@ export default function App() {
       {sheet?.kind === 'budget' && (
         <Sheet title="월 예산" onClose={closeSheet}>
           <BudgetForm budget={ledger.budget} onSave={saveBudget} />
+        </Sheet>
+      )}
+
+      {sheet?.kind === 'members' && (
+        <Sheet title="함께 쓰는 사람" onClose={closeSheet}>
+          <MembersForm members={members} meId={meId} onSave={saveMembers} />
         </Sheet>
       )}
 

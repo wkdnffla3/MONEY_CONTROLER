@@ -29,16 +29,35 @@ export function isValidTx(t) {
     && isAmount(t.amount, 1)
     && isStr(t.category, 20)
     && typeof (t.memo ?? '') === 'string' && (t.memo ?? '').length <= 100
-    && typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date);
+    && typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date)
+    && (t.memberId == null || isStr(t.memberId, 64));
 }
+
+/** 함께 쓰는 사람 목록: 최대 10명, 이름 1~12자, id 중복 없음 */
+export function isValidMembers(list) {
+  if (!Array.isArray(list) || list.length > 10) return false;
+  const ids = new Set();
+  for (const m of list) {
+    if (!m || typeof m !== 'object' || !isStr(m.id, 64) || ids.has(m.id)) return false;
+    if (!isStr(m.name, 12) || !m.name.trim()) return false;
+    if (!Number.isInteger(m.color) || m.color < 0 || m.color > 99) return false;
+    ids.add(m.id);
+  }
+  return true;
+}
+const cleanMembers = (list) => (isValidMembers(list) ? list.map(({ id, name, color }) => ({ id, name, color })) : []);
 
 export function isValidOp(o) {
   if (!o || typeof o !== 'object' || !isStr(String(o.opId ?? ''), 64)) return false;
   if (o.kind === 'upsert') return isStr(o.id, 64) && isValidTx(o.data);
   if (o.kind === 'delete') return isStr(o.id, 64);
   if (o.kind === 'budget') return isAmount(o.value, 0);
+  if (o.kind === 'members') return isValidMembers(o.value);
   return false;
 }
+
+/** 설정형 작업(예산, 사람 목록)인지 — 내역 ID가 없고 같은 종류끼리 합쳐짐 */
+const isSetting = (kind) => kind === 'budget' || kind === 'members';
 
 // ---------- 저장소 (사용자별) ----------
 // 보낼 목록: 항상 localStorage (탭을 닫아도 남아야 하므로)
@@ -77,38 +96,53 @@ export const readCache = (uid) => {
   const c = read(cKey(uid), null, 'session') || read(cKey(uid), null, 'local');
   if (!c || typeof c !== 'object' || !c.tx || typeof c.tx !== 'object') return null;
   const tx = Object.fromEntries(Object.entries(c.tx).filter(([id, t]) => isStr(id, 64) && isValidTx(t)));
-  return { tx, budget: isAmount(c.budget, 0) ? c.budget : 0 };
+  return { tx, budget: isAmount(c.budget, 0) ? c.budget : 0, members: cleanMembers(c.members) };
 };
-export const writeCache = (uid, tx, budget, remember) => {
+export const writeCache = (uid, state, remember) => {
   const kind = remember ? 'local' : 'session';
   remove(cKey(uid));
-  return write(cKey(uid), { tx, budget, savedAt: Date.now() }, kind);
+  return write(cKey(uid), { tx: state.tx, budget: state.budget, members: state.members, savedAt: Date.now() }, kind);
 };
+export const sanitizeMembers = cleanMembers;
+export const EMPTY_STATE = Object.freeze({ tx: {}, budget: 0, members: [] });
 
 /** 로그아웃 시 이 기기에서 해당 사용자의 가계부 데이터 삭제 */
 export const clearUserData = (uid) => { remove(cKey(uid)); remove(qKey(uid)); };
 
 // ---------- 목록 정리 ----------
 /** 새 작업을 목록에 넣으면서 같은 대상에 대한 이전 작업을 지움 */
+/** 두 작업이 같은 대상을 바꾸는지 (같은 내역 ID, 또는 같은 종류의 설정) */
+export const sameTarget = (a, b) =>
+  isSetting(a.kind) || isSetting(b.kind) ? a.kind === b.kind : a.id === b.id;
+
 export function coalesce(queue, op) {
-  const sameTarget = (o) =>
-    op.kind === 'budget' ? o.kind === 'budget' : (o.kind === 'upsert' || o.kind === 'delete') && o.id === op.id;
-  return [...queue.filter((o) => !sameTarget(o)), op];
+  return [...queue.filter((o) => !sameTarget(o, op)), op];
 }
 
 /** 목록에서 특정 작업 하나만 제거 (보내는 동안 합쳐져서 이미 없으면 그대로) */
 export const removeOp = (queue, opId) => queue.filter((o) => o.opId !== opId);
 
-/** 서버에서 받은 데이터 위에 아직 못 보낸 작업을 덮어서 화면용 상태를 만듦 */
-export function applyQueue(tx, budget, queue) {
-  const next = { ...tx };
-  let b = budget;
+/** 서버에서 받은 상태 { tx, budget, members } 위에 아직 못 보낸 작업을 덮어서 화면용 상태를 만듦 */
+export function applyQueue(state, queue) {
+  const tx = { ...state.tx };
+  let { budget, members } = state;
   for (const op of queue) {
-    if (op.kind === 'upsert') next[op.id] = op.data;
-    else if (op.kind === 'delete') delete next[op.id];
-    else if (op.kind === 'budget') b = op.value;
+    if (op.kind === 'upsert') tx[op.id] = op.data;
+    else if (op.kind === 'delete') delete tx[op.id];
+    else if (op.kind === 'budget') budget = op.value;
+    else if (op.kind === 'members') members = op.value;
   }
-  return { tx: next, budget: b };
+  return { tx, budget, members: members || [] };
+}
+
+/**
+ * DB에 아직 새 칸이 없을 때(업데이트 SQL 미실행) 나는 오류인가.
+ * 42703 = 없는 칸, PGRST204 = API가 칸을 모름. 데이터를 버리지 않고 보관해야 함.
+ */
+export function isSchemaError(err) {
+  if (!err) return false;
+  const code = String(err.code || '');
+  return code === '42703' || code === 'PGRST204' || /column .* does not exist|could not find the .* column/i.test(String(err.message || ''));
 }
 
 // ---------- 오류 분류 ----------
@@ -127,6 +161,8 @@ export function isRetryable(err) {
   if (/jwt|token/i.test(msg) || code === 'PGRST301' || code === 'PGRST303') return true;
   // 권한 오류(42501)·401·403은 대부분 로그인 만료 때문 → 사용자 데이터를 버리지 않고 다시 로그인되면 재전송
   if (code === '42501' || err.status === 401 || err.status === 403) return true;
+  // DB 업데이트 전 → 업데이트되면 성공하므로 보관 후 재시도
+  if (isSchemaError(err)) return true;
   // Postgres 오류 코드(22xxx 데이터, 23xxx 제약, 42xxx 문법)와 PostgREST 요청 오류는 영구 실패
   if (/^(22|23|42)[0-9A-Z]{3}$/.test(code) || /^PGRST[12]\d\d$/.test(code)) return false;
   if (status !== null) {
