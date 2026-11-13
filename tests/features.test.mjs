@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate } from '../src/lib/recurring.js';
 import { csvCell, toCsv } from '../src/lib/csv.js';
-import { isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../src/lib/outbox.js';
+import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../src/lib/shopping.js';
+import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../src/lib/outbox.js';
 
 const D = (s) => new Date(`${s}T12:00:00`);
 const rule = (o = {}) => ({ id: 'r1', type: 'expense', amount: 500000, category: '주거·통신', memo: '월세', memberId: null,
@@ -75,4 +76,33 @@ q = coalesce(q, { opId: '3', kind: 'recurring', value: [] });
 assert.deepEqual(q.map((o) => o.kind), ['categories', 'recurring']);
 const st = applyQueue(EMPTY_STATE, q);
 assert.deepEqual(st.recurring, []); assert.equal(st.categories, C); assert.deepEqual(st.catBudgets, {});
+// ---- 장보기 ----
+const it = (id, o = {}) => ({ id, name: id, qty: 1, price: 0, category: '식비', memberId: null, memo: '', checked: true, status: 'todo', paid: null, txId: null, boughtAt: null, createdAt: 1, ...o });
+const A1 = it('우유', { price: 2500, qty: 2 }), B1 = it('계란', { price: 6000 }), C1 = it('휴지', { category: '생활용품' });
+assert.equal(defaultMemo([A1, B1, C1]), '장보기: 우유 외 2개'); assert.equal(defaultMemo([A1]), '장보기: 우유');
+assert.deepEqual(shopSummary([A1, { ...B1, checked: false }, { ...C1, status: 'bought' }]), { todo: 2, todoSum: 11000, cart: 1, cartSum: 5000, unpriced: 0 });
+// 합치기: 내역 1건, ID = shop-<결제ID>, 물품 3개 모두 구매 완료 + 같은 txId, 물품 금액 합 = 결제액
+const pc = planPurchase([A1, B1, C1], { purchaseId: 'P1', mode: 'combined', date: '2026-11-13', category: '식비', memberId: null, total: 15000, amounts: { 우유: 5000, 계란: 6000, 휴지: 4000 }, now: 5 });
+assert.equal(pc.txs.length, 1); assert.equal(pc.txs[0].id, 'shop-P1'); assert.equal(pc.txs[0].data.amount, 15000);
+assert.equal(pc.txs[0].data.memo, '장보기: 우유 외 2개'); assert.equal(isShoppingTxId(pc.txs[0].id), true);
+assert.ok(pc.items.every((x) => x.data.status === 'bought' && x.data.txId === 'shop-P1' && !x.data.checked && x.data.boughtAt === '2026-11-13'));
+assert.equal(pc.items.reduce((a, x) => a + x.data.paid, 0), 15000);
+// 영수증 합계가 물품 합과 달라도(할인) 나눈 금액 합이 정확히 결제액
+const pc2 = planPurchase([A1, B1, C1], { purchaseId: 'P2', mode: 'combined', date: '2026-11-13', category: '식비', total: 13999, amounts: { 우유: 5000, 계란: 6000, 휴지: 4000 } });
+assert.equal(pc2.items.reduce((a, x) => a + x.data.paid, 0), 13999);
+// 나누기: 물품마다 내역, ID = shop-<물품ID> (같은 물품을 다시 확정해도 같은 ID), 각자 카테고리
+const ps = planPurchase([A1, C1], { purchaseId: 'X', mode: 'separate', date: '2026-11-13', amounts: { 우유: 5000, 휴지: 4000 } });
+assert.deepEqual(ps.txs.map((t) => [t.id, t.data.amount, t.data.category]), [['shop-우유', 5000, '식비'], ['shop-휴지', 4000, '생활용품']]);
+assert.equal(ps.txs[0].data.memo, '장보기: 우유 ×2');
+const ps2 = planPurchase([A1, C1], { purchaseId: 'Y', mode: 'separate', date: '2026-11-13', amounts: { 우유: 5000, 휴지: 4000 } });
+assert.deepEqual(ps2.txs.map((t) => t.id), ps.txs.map((t) => t.id)); // 결제ID가 달라도 같은 ID → 중복 없음
+// 구매 기록 묶기
+const hist = groupHistory([...pc.items.map((x) => x.data), ...ps.items.map((x) => ({ ...x.data, boughtAt: '2026-11-14' }))]);
+assert.equal(hist.length, 3); assert.equal(hist[0].date, '2026-11-14'); assert.equal(hist.find((g) => g.txId === 'shop-P1').total, 15000);
+// 검증·대상 구분
+assert.equal(isValidItem(A1), true);
+for (const bad of [{ ...A1, name: '' }, { ...A1, qty: 0 }, { ...A1, qty: 1000 }, { ...A1, price: -1 }, { ...A1, status: 'x' }, { ...A1, checked: 'y' }, { ...A1, boughtAt: '11/13' }])
+  assert.equal(isValidItem(bad), false);
+assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'upsert', id: 'z' }), false); // 물품과 내역은 ID가 같아도 다른 대상
+assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' }), true);
 console.log('feature unit tests: all passed');
