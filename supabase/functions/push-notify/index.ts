@@ -17,7 +17,7 @@ const VAPID_PUBLIC_KEY = env('VAPID_PUBLIC_KEY');
 const VAPID_PRIVATE_KEY = env('VAPID_PRIVATE_KEY');
 const VAPID_SUBJECT = env('VAPID_SUBJECT') || 'mailto:admin@example.com';
 const WEBHOOK_SECRET = env('WEBHOOK_SECRET');
-const TABLES = new Set(['transactions', 'shopping_items']);
+const TABLES = new Set(['transactions', 'shopping_items', 'tx_comments']);
 
 if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -59,17 +59,21 @@ Deno.serve(async (req) => {
   const note = buildNotification({ table, type, record, members });
   if (!note) return json(200, { skipped: 'no notification for this entry' });
 
+  // 댓글은 쓴 사람 계정의 모든 기기 제외(account_id, 008 이후), 나머지는 입력한 기기만 제외
+  const isComment = table === 'tx_comments';
   const { data: subs, error } = await admin
     .from('push_subscriptions')
-    .select('id, device_id, endpoint, p256dh, auth, prefs')
+    .select(isComment ? 'id, account_id, device_id, endpoint, p256dh, auth, prefs' : 'id, device_id, endpoint, p256dh, auth, prefs')
     .eq('user_id', userId);
   if (error) return json(500, { error: error.message });
 
-  const result = await pushTo(subs || [], note, (s) => !!record.device_id && s.device_id === record.device_id);
+  const result = await pushTo(subs || [], note, (s) => (isComment
+    ? !!record.author && s.account_id === record.author
+    : !!record.device_id && s.device_id === record.device_id));
   return json(200, result);
 });
 
-type Sub = { id: string; user_id?: string; device_id: string; endpoint: string; p256dh: string; auth: string; prefs: unknown };
+type Sub = { id: string; user_id?: string; account_id?: string; device_id: string; endpoint: string; p256dh: string; auth: string; prefs: unknown };
 type Note = { kind: string; title: string; body: string; tag: string; url: string };
 
 // 기기 목록에 알림 보내기. exclude(s) 가 true 인 기기, 그 종류를 껐거나 방해 금지 시간인 기기는 제외

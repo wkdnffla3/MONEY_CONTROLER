@@ -1,13 +1,14 @@
 // 알림 문구 만들기 — 앱(앱 안 알림)과 Edge Function(웹 푸시)이 같은 파일을 씀.
 // 브라우저와 Deno 둘 다에서 돌아가도록 외부 라이브러리 없이 작성.
 
-export const NOTIFY_KINDS = ['tx', 'shop', 'purchase', 'weekly', 'monthly'];
+export const NOTIFY_KINDS = ['tx', 'shop', 'purchase', 'comment', 'weekly', 'monthly'];
 
 export const DEFAULT_PREFS = Object.freeze({
   inapp: true,        // 앱이 열려 있을 때 화면 위 알림
   tx: true,           // 가계부 내역 추가
   shop: true,         // 장보기 물품 추가
   purchase: true,     // 장보기 결제 확정
+  comment: true,      // 내역 댓글
   weekly: true,       // 주간 리포트 (월요일 오전 9시, 웹 푸시)
   monthly: true,      // 월간 리포트 (매월 1일 오전 9시, 웹 푸시)
   quiet: false,       // 방해 금지 시간 사용
@@ -22,7 +23,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 export function normalizePrefs(p) {
   const src = p && typeof p === 'object' ? p : {};
   const out = { ...DEFAULT_PREFS };
-  for (const k of ['inapp', 'tx', 'shop', 'purchase', 'weekly', 'monthly', 'quiet']) if (typeof src[k] === 'boolean') out[k] = src[k];
+  for (const k of ['inapp', 'tx', 'shop', 'purchase', 'comment', 'weekly', 'monthly', 'quiet']) if (typeof src[k] === 'boolean') out[k] = src[k];
   if (HHMM.test(src.quietStart)) out.quietStart = src.quietStart;
   if (HHMM.test(src.quietEnd)) out.quietEnd = src.quietEnd;
   if (typeof src.tz === 'string' && src.tz.length <= 64) {
@@ -99,6 +100,18 @@ export function buildNotification({ table, type = 'INSERT', record, members = []
       body: `${clip(record.category, 12)} ${won(record.amount)}${memo ? ` · ${memo}` : ''}`,
       tag: `tx-${record.id}`,
       url: '/',
+    };
+  }
+
+  if (table === 'tx_comments') {
+    if (typeof record.tx_id !== 'string' || !String(record.body ?? '').trim()) return null;
+    const name = clip(record.author_name, 12);
+    return {
+      kind: 'comment',
+      title: `${name ? `${name}님이` : '누군가'} 댓글을 남겼어요`,
+      body: clip(record.body, 80),
+      tag: `comment-${record.id}`,
+      url: `/?tx=${encodeURIComponent(record.tx_id)}`,
     };
   }
 

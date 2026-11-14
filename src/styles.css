@@ -625,3 +625,48 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 /* 가로 스크롤 줄이 그리드를 넓히지 않게 */
 .fav-bar{min-width:0;max-width:100%;overflow:hidden}
 .grid > .fav-bar{min-width:0}
+
+/* ===== 댓글 ===== */
+.comments{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:10px}
+.comments h4{font-size:14px;color:var(--ink)}
+.comment-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:260px;overflow-y:auto}
+.comment-list li{padding:9px 12px;border-radius:12px;background:var(--surface-2);max-width:88%}
+.comment-list li.mine{background:var(--accent-soft);justify-self:end}
+.cm-head{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.cm-head b{color:var(--ink);font-size:12.5px}
+.cm-del{margin-left:auto;font-size:12px;color:var(--muted);text-decoration:underline}
+.comment-list p{margin-top:3px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
+.comment-form{display:flex;gap:8px}
+.comment-form input{flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:15px}
+.comment-off{margin-top:14px}
+.cm-mark{margin-left:6px;font-size:12px;color:var(--muted);white-space:nowrap}
+.notify-banner.nb-comment{border-left:4px solid var(--c4)}
+
+/* ===== 변경 기록 ===== */
+.activity{display:grid;gap:14px}
+.act-day h4{font-size:13px;color:var(--muted);margin-bottom:6px}
+.act-day > ul{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.act{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface);display:grid;gap:4px}
+.act-delete{border-left:3px solid var(--expense)}
+.act-insert{border-left:3px solid var(--accent)}
+.act-update{border-left:3px solid var(--c3)}
+.act-head{display:flex;align-items:center;gap:8px;font-size:13px}
+.act-who{font-weight:700;color:var(--ink)}
+.act-verb{color:var(--muted)}
+.act-head time{margin-left:auto;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.act-sum{font-size:14px;color:var(--ink)}
+.act-sum small{color:var(--muted)}
+.act-diffs{list-style:none;margin:2px 0 0;padding:0;font-size:12.5px;color:var(--muted);display:grid;gap:2px}
+.act-diffs b{color:var(--ink);font-weight:600;margin-right:4px}
+.act-actions{display:flex;gap:6px;justify-content:flex-end;margin-top:2px}
+.ok-mark{color:var(--accent)}
+
+/* ===== 구독 자동 발견 ===== */
+.sub-finder ul{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:8px}
+.sub-finder li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--surface-2)}
+.sf-ic{font-size:20px;flex:none}
+.sf-main{flex:1;min-width:0;display:grid;gap:2px}
+.sf-main b{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sf-main small{font-size:12px;color:var(--muted)}
+.sf-actions{display:flex;gap:6px;flex:none}
+@media (max-width:420px){.sub-finder li{flex-wrap:wrap}.sf-actions{width:100%;justify-content:flex-end}}

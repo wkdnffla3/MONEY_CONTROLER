@@ -11,7 +11,8 @@ import { getDeviceId, isOwn, markOwn } from '../lib/device';
 
 export { newId };
 
-const fromRow = (r) => ({
+// DB 줄 → 앱 형식 (변경 기록에서 되살릴 때도 씀)
+export const fromRow = (r) => ({
   type: r.type,
   amount: Number(r.amount),
   category: r.category,
@@ -53,7 +54,7 @@ const TX_COLS = 'id,type,amount,category,memo,date,created_at';
 const TX_COL_SETS = [`${TX_COLS},member_id,tags,card_id,inst_months`, `${TX_COLS},member_id`, TX_COLS];
 const ITEM_COLS = 'id,name,qty,price,category,member_id,memo,checked,status,paid,tx_id,bought_at,created_at';
 
-const fromItemRow = (r) => ({
+export const fromItemRow = (r) => ({
   name: r.name,
   qty: Number(r.qty) || 1,
   price: Number(r.price) || 0,
@@ -75,6 +76,7 @@ const toItemRow = (id, userId, i, device) => ({
 });
 // 설정 칸: DB 업데이트 단계별로 있는 칸이 다름. 최신부터 시도해서 되는 것으로 불러옴
 const SETTINGS_COL_SETS = [
+  ['budget', 'members', 'recurring', 'categories', 'cat_budgets', 'cards', 'favorites', 'dismissed_subs'], // 010 적용
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets', 'cards', 'favorites'], // 008 적용
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets', 'cards'], // 006 적용
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets'], // 004 적용
@@ -223,7 +225,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     // 아직 실행하지 않은 DB 업데이트 중 가장 앞 번호 (예: '006')
     const need = [
       txLevel === 2 ? '003' : txLevel === 1 ? '006' : null,
-      ['', '008', '006', '004', '003'][setLevel] || null,
+      ['', '010', '008', '006', '004', '003'][setLevel] || null,
       noItemsTable ? '005' : null,
       noDeviceCol ? '007' : null,
     ].filter(Boolean).sort()[0] || null;
@@ -555,6 +557,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     catBudgets: view.catBudgets,
     cards: view.cards,
     favorites: view.favorites,
+    dismissedSubs: view.dismissedSubs,
     schemaOutdated,
     schemaNeed,
     thisMonth: ymOf(new Date(today)),

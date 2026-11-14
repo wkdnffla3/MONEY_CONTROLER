@@ -144,6 +144,7 @@ export const SETTINGS = {
   catBudgets: { column: 'cat_budgets', valid: isValidCatBudgets,      empty: {} },
   cards:      { column: 'cards',       valid: isValidCards,           empty: [] },
   favorites:  { column: 'favorites',   valid: isValidFavorites,       empty: [] },
+  dismissedSubs: { column: 'dismissed_subs', valid: (v) => Array.isArray(v) && v.length <= 100 && v.every((x) => isStr(x, 80)), empty: [] },
 };
 const isSetting = (kind) => Object.prototype.hasOwnProperty.call(SETTINGS, kind);
 const cleanSetting = (kind, v) => (SETTINGS[kind].valid(v) ? v : SETTINGS[kind].empty);
