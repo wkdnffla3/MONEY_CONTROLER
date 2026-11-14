@@ -1,5 +1,10 @@
 import { useId, useRef, useState } from 'react';
 import { useCategories } from '../lib/categories';
+import AddCategoryChip from './AddCategoryChip';
+import TagInput from './TagInput';
+import { useFormData } from '../lib/formData';
+import { colorVar } from '../lib/members';
+import { INSTALLMENT_OPTIONS } from '../lib/cards';
 import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount } from '../lib/format';
 
@@ -21,6 +26,11 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
   const [category, setCategory] = useState(initial?.category || CATS.expense[0].name);
   const [date, setDate] = useState(initial?.date || defaultDate);
   const [memo, setMemo] = useState(initial?.memo || '');
+  const { cards, tags: tagSuggestions } = useFormData();
+  const [tags, setTags] = useState(initial?.tags || []);
+  // 결제수단: null = 현금·체크카드 등, 카드 id = 신용카드 (삭제된 카드면 현금으로 보임)
+  const [cardId, setCardId] = useState(initial?.cardId && cards.some((c) => c.id === initial.cardId) ? initial.cardId : null);
+  const [inst, setInst] = useState(initial?.inst || 1);
   // 누가: 등록된 사람 id 또는 null(공동). 삭제된 사람이 지정돼 있던 내역은 공동으로 보임
   const validId = (id) => (id && members.some((m) => m.id === id) ? id : null);
   const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(defaultMemberId)));
@@ -62,9 +72,13 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
         memo: memo.trim(),
         date,
         memberId: validId(memberId),
+        tags,
+        // 수입에는 카드·할부 없음
+        cardId: type === 'expense' && cardId && cards.some((c) => c.id === cardId) ? cardId : null,
+        inst: type === 'expense' && cardId ? inst : 1,
         createdAt: initial?.createdAt || Date.now(),
       });
-      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); }
+      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); setTags([]); setInst(1); }
     } catch {
       // 오류 알림은 상위(App)에서 토스트로 표시
     } finally {
@@ -110,6 +124,7 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
               {icon} {c}
             </button>
           ))}
+          <AddCategoryChip type={type} onAdded={setCategory} />
         </div>
       </div>
 
@@ -129,6 +144,31 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
         </div>
       )}
 
+      {type === 'expense' && cards.length > 0 && (
+        <div className="field">
+          <label>결제수단</label>
+          <div className="chips">
+            <button type="button" className="chip" aria-pressed={cardId === null} onClick={() => { setCardId(null); setInst(1); }}>💵 현금·기타</button>
+            {cards.map((c) => (
+              <button key={c.id} type="button" className="chip" aria-pressed={cardId === c.id} onClick={() => setCardId(c.id)}>
+                <span className="dot" style={{ background: colorVar(c.color) }} />{c.name}
+              </button>
+            ))}
+          </div>
+          {cardId && (
+            <div className="inst-row">
+              <label htmlFor={`${uid}-inst`}>할부</label>
+              <select id={`${uid}-inst`} className="select sm" value={inst} onChange={(e) => setInst(Number(e.target.value))}>
+                {INSTALLMENT_OPTIONS.map((n) => <option key={n} value={n}>{n === 1 ? '일시불' : `${n}개월`}</option>)}
+              </select>
+              {inst > 1 && parseAmount(amount) > 0 && (
+                <span className="hint">월 약 {Math.floor(parseAmount(amount) / inst).toLocaleString('ko-KR')}원 · 가계부엔 산 날 전액으로 기록</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="row2">
         <div className="field">
           <label htmlFor={`${uid}-date`}>날짜</label>
@@ -138,6 +178,11 @@ export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoF
           <label htmlFor={`${uid}-memo`}>메모</label>
           <input id={`${uid}-memo`} maxLength={60} placeholder="예: 점심, 편의점" value={memo} onChange={(e) => setMemo(e.target.value)} />
         </div>
+      </div>
+
+      <div className="field">
+        <label htmlFor={`${uid}-tags`}>태그</label>
+        <TagInput id={`${uid}-tags`} value={tags} onChange={setTags} suggestions={tagSuggestions} />
       </div>
 
       <div className="err" aria-live="polite">{error}</div>

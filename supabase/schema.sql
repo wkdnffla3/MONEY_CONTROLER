@@ -10,6 +10,10 @@ create table if not exists public.transactions (
   memo        text default '' check (char_length(memo) <= 100),
   date        date not null,
   member_id   text check (member_id is null or char_length(member_id) between 1 and 64),
+  tags        jsonb not null default '[]'::jsonb
+              check (jsonb_typeof(tags) = 'array' and jsonb_array_length(tags) <= 5 and pg_column_size(tags) <= 512),
+  card_id     text check (card_id is null or char_length(card_id) between 1 and 64),
+  inst_months smallint not null default 1 check (inst_months between 1 and 36),
   created_at  bigint not null default (extract(epoch from now()) * 1000)::bigint
 );
 create index if not exists transactions_user_date_idx on public.transactions (user_id, date);
@@ -25,7 +29,9 @@ create table if not exists public.settings (
   categories jsonb
            check (categories is null or (jsonb_typeof(categories) = 'object' and pg_column_size(categories) <= 8192)),
   cat_budgets jsonb not null default '{}'::jsonb
-           check (jsonb_typeof(cat_budgets) = 'object' and pg_column_size(cat_budgets) <= 8192)
+           check (jsonb_typeof(cat_budgets) = 'object' and pg_column_size(cat_budgets) <= 8192),
+  cards    jsonb not null default '[]'::jsonb
+           check (jsonb_typeof(cards) = 'array' and jsonb_array_length(cards) <= 10 and pg_column_size(cards) <= 4096)
 );
 
 -- 3) 행 단위 보안: 로그인한 본인 데이터만 읽고 쓸 수 있게
@@ -57,6 +63,10 @@ create table if not exists public.shopping_items (
   price       bigint not null default 0 check (price between 0 and 9999999999),  -- 예상 단가 (0 = 미정)
   category    text not null check (char_length(category) between 1 and 20),
   member_id   text check (member_id is null or char_length(member_id) between 1 and 64),
+  tags        jsonb not null default '[]'::jsonb
+              check (jsonb_typeof(tags) = 'array' and jsonb_array_length(tags) <= 5 and pg_column_size(tags) <= 512),
+  card_id     text check (card_id is null or char_length(card_id) between 1 and 64),
+  inst_months smallint not null default 1 check (inst_months between 1 and 36),
   memo        text not null default '' check (char_length(memo) <= 100),
   checked     boolean not null default false,                                   -- 장바구니에 담음
   status      text not null default 'todo' check (status in ('todo', 'bought')),

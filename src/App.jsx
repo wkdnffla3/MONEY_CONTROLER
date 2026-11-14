@@ -32,15 +32,23 @@ import { CategoryBudgetCard, CategoryBudgetForm } from './components/CategoryBud
 import MonthlyTrend from './components/MonthlyTrend';
 import ExportForm from './components/ExportForm';
 import SettingsMenu from './components/SettingsMenu';
-import { CategoriesContext, resolveCategories } from './lib/categories';
+import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
 import ShoppingPage from './components/ShoppingPage';
 import ShopItemForm from './components/ShopItemForm';
 import PurchaseConfirm from './components/PurchaseConfirm';
 import { summarize as summarizeShopping } from './lib/shopping';
+import { FormDataContext } from './lib/formData';
+import { allTags, compareMonths, lastPrices as computeLastPrices } from './lib/analysis';
+import CardManager from './components/CardManager';
+import CardBills from './components/CardBills';
+import MonthCompare from './components/MonthCompare';
+import AdvancedSearch, { EMPTY_FILTERS } from './components/AdvancedSearch';
+import ReportPage from './components/ReportPage';
 
 // 페이지: 주소 끝이 #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
-const pageFromHash = () => (window.location.hash === '#shopping' ? 'shopping' : 'ledger');
+const PAGES = ['shopping', 'report'];
+const pageFromHash = () => { const h = window.location.hash.slice(1); return PAGES.includes(h) ? h : 'ledger'; };
 
 const thisMonth = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
 
@@ -71,7 +79,11 @@ export default function App() {
     return () => { window.removeEventListener('popstate', onHash); window.removeEventListener('hashchange', onHash); };
   }, []);
   const [sheet, setSheet] = useState(() => (openedFromAddShortcut() ? { kind: 'add' } : null)); // { kind: 'add' } | { kind: 'edit', id } | { kind: 'budget' }
-  const closeSheet = useCallback(() => setSheet(null), []);
+  const closeSheet = useCallback(() => setSheet((s) => (s?.back ? { kind: s.back } : null)), []);
+  const [listView, setListView] = useState('list'); // 내역: 목록 | 달력
+  const [calDay, setCalDay] = useState(null);         // 달력에서 고른 날짜
+  const [searchFilters, setSearchFilters] = useState(EMPTY_FILTERS);
+  const [reportYear, setReportYear] = useState(() => new Date().getFullYear());
   const { online } = ledger;
 
   // 바로가기 주소(?action=add)는 한 번 쓰고 지움 → 새로고침해도 다시 열리지 않게
@@ -91,14 +103,19 @@ export default function App() {
   const viewTx = useMemo(() => filterByOwner(monthTx, members, whoValid), [monthTx, members, whoValid]);
   const totals = useMemo(() => sumByType(viewTx), [viewTx]);
   const householdExp = useMemo(() => sumByType(monthTx).exp, [monthTx]);
-  const prevExp = useMemo(() => {
-    const p = prevMonth(ym);
-    const k = ymKey(p.y, p.m);
-    return sumByType(filterByOwner(allTx.filter((t) => t.date?.startsWith(k)), members, whoValid)).exp;
-  }, [allTx, ym, members, whoValid]);
+  // 지난달 대비: 진행 중인 달이면 같은 날짜까지끼리 비교 (요약 카드와 "지난달 대비" 카드가 같은 기준)
+  const monthCmp = useMemo(() => compareMonths(filterByOwner(allTx, members, whoValid), ym), [allTx, ym, members, whoValid]);
   const expenses = useMemo(() => viewTx.filter((t) => t.type !== 'income'), [viewTx]);
   const whoTx = useMemo(() => filterByOwner(allTx, members, whoValid), [allTx, members, whoValid]);
   const cats = useMemo(() => resolveCategories(ledger.categories), [ledger.categories]);
+  const tagList = useMemo(() => allTags(allTx), [allTx]);
+  const formData = useMemo(() => ({ cards: ledger.cards, tags: tagList }), [ledger.cards, tagList]);
+  const cardUsage = useMemo(() => {
+    const u = {};
+    for (const t of allTx) if (t.cardId) u[t.cardId] = (u[t.cardId] || 0) + 1;
+    return u;
+  }, [allTx]);
+  const shopLastPrices = useMemo(() => computeLastPrices(Object.values(ledger.items)), [ledger.items]);
   const categoryCounts = useMemo(() => {
     const c = {};
     for (const t of allTx) { const k = `${t.type}:${t.category}`; c[k] = (c[k] || 0) + 1; }
@@ -141,14 +158,15 @@ export default function App() {
   const shopSummary = useMemo(() => summarizeShopping(Object.values(shopItems)), [shopItems]);
   const changePage = (p) => {
     setPage(p);
-    closeSheet();
-    if (p === 'shopping') window.history.pushState(null, '', `${window.location.pathname}#shopping`);
+    setSheet(null);
+    if (p !== 'ledger') window.history.pushState(null, '', `${window.location.pathname}#${p}`);
     else window.history.pushState(null, '', window.location.pathname);
     window.scrollTo(0, 0);
   };
   const shop = {
     add: (data) => notifySaved(ledger.saveItem(newId(), data), `${data.name} 추가했어요`),
     open: (id) => setSheet({ kind: 'item', id }),
+    openNew: (prefill) => setSheet({ kind: 'item', prefill }),
     toggle: (id) => {
       const it = shopItems[id];
       if (it) ledger.saveItem(id, { ...it, checked: !it.checked }).catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
@@ -193,11 +211,25 @@ export default function App() {
     .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
 
   // 반복 내역은 시트를 닫지 않고 바로바로 저장
+  const saveCards = (list, msg) => notifySaved(ledger.saveSetting('cards', list), msg);
   const saveRecurring = (rules, msg) => notifySaved(ledger.saveSetting('recurring', rules), msg);
   const saveCatBudgets = (value) => { closeSheet(); notifySaved(ledger.saveSetting('catBudgets', value), '카테고리별 예산을 저장했어요'); };
   const saveCategories = (cats, renames) => {
     closeSheet();
     notifySaved(ledger.saveCategories(cats, renames), renames.length ? '카테고리를 저장하고 기존 내역도 바꿨어요' : '카테고리를 저장했어요');
+  };
+
+  // 입력 폼에서 바로 카테고리 추가: 지금 목록 끝에 붙여 저장 (검사 실패 시 오류 문구를 돌려줌)
+  const addCategory = (type, name, icon) => {
+    const err = checkNewCategory(cats, type, name);
+    if (err) return err;
+    const next = { expense: [...cats.expense], income: [...cats.income] };
+    next[type] = [...next[type], { name, icon: icon || '🏷️' }];
+    // 받침 있으면 "을", 없으면(또는 한글이 아니면) "를"
+    const code = name.charCodeAt(name.length - 1) - 0xac00;
+    const josa = code >= 0 && code <= 11171 && code % 28 !== 0 ? '을' : '를';
+    notifySaved(ledger.saveCategories(next, []), `카테고리 "${name}"${josa} 추가했어요`);
+    return null;
   };
 
   const saveMembers = (list, me) => {
@@ -249,6 +281,8 @@ export default function App() {
 
   return (
     <CategoriesContext.Provider value={cats}>
+    <CategoryActionsContext.Provider value={addCategory}>
+    <FormDataContext.Provider value={formData}>
       <div className="app">
         <Header
           status={ledger.status}
@@ -287,6 +321,12 @@ export default function App() {
 
         {page === 'shopping' ? (
           <ShoppingPage items={shopItems} members={members} defaultMemberId={meId} actions={shop} />
+        ) : page === 'report' ? (
+          <>
+            <WhoFilter members={members} who={whoValid} onChange={setWho} />
+            <ReportPage allTx={whoTx} year={reportYear} onYear={setReportYear} members={members} cards={ledger.cards}
+              who={whoValid} whoLabel={whoLabel} onPickMonth={(m) => { setYm(m); changePage('ledger'); }} />
+          </>
         ) : (
         <div className="layout">
           <main className="grid">
@@ -297,13 +337,15 @@ export default function App() {
               onToday={() => setYm(thisMonth())}
             />
             <WhoFilter members={members} who={whoValid} onChange={setWho} />
-            <Summary inc={totals.inc} exp={totals.exp} prevExp={prevExp} who={whoLabel} />
+            <Summary inc={totals.inc} exp={totals.exp} cmp={monthCmp} who={whoLabel} />
             <section className="grid insights">
               <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
                 note={whoLabel ? '예산은 모두의 지출 합계 기준이에요.' : ''} />
               <CategoryDonut expenses={expenses} total={totals.exp} />
               <CategoryBudgetCard catBudgets={ledger.catBudgets} monthTx={monthTx} onEdit={() => setSheet({ kind: 'catBudgets' })} />
               <DailyChart list={viewTx} ym={ym} half />
+              <MonthCompare allTx={whoTx} ym={ym} label={whoLabel} cmp={monthCmp} />
+              <CardBills allTx={allTx} cards={ledger.cards} thisMonth={ledger.thisMonth} onManage={() => setSheet({ kind: 'cards' })} />
               <MonthlyTrend allTx={whoTx} ym={ym} onPick={setYm} label={whoLabel} />
               <MemberSummary list={monthTx} members={members} who={whoValid} onSelect={setWho}
                 onManage={() => setSheet({ kind: 'members' })} />
@@ -316,6 +358,12 @@ export default function App() {
               query={query}
               onQuery={setQuery}
               onOpen={(id) => setSheet({ kind: 'edit', id })}
+              view={listView}
+              onView={(v) => { setListView(v); setCalDay(null); }}
+              ym={ym}
+              day={calDay && calDay.startsWith(ymKey(ym.y, ym.m)) ? calDay : null}
+              onDay={setCalDay}
+              onSearch={() => setSheet({ kind: 'search' })}
             />
           </main>
 
@@ -338,6 +386,8 @@ export default function App() {
           <ShopItemForm
             key={sheet.id || 'new'}
             initial={sheet.id ? shopItems[sheet.id] : null}
+            lastPrices={shopLastPrices}
+            prefill={sheet.prefill}
             members={members}
             defaultMemberId={meId}
             onSubmit={(d) => saveShopItem(sheet.id || newId(), d)}
@@ -383,7 +433,7 @@ export default function App() {
       {sheet?.kind === 'menu' && (
         <Sheet title="설정" onClose={closeSheet}>
           <SettingsMenu onOpen={(kind) => setSheet({ kind })}
-            counts={{ recurring: ledger.recurring.filter((r) => r.active).length, members: members.length, catBudgets: Object.keys(ledger.catBudgets).length }} />
+            counts={{ recurring: ledger.recurring.filter((r) => r.active).length, members: members.length, cards: ledger.cards.length, catBudgets: Object.keys(ledger.catBudgets).length }} />
         </Sheet>
       )}
       {sheet?.kind === 'recurring' && (
@@ -403,7 +453,19 @@ export default function App() {
       )}
       {sheet?.kind === 'export' && (
         <Sheet title="CSV 내보내기" onClose={closeSheet}>
-          <ExportForm allTx={allTx} members={members} ym={ym} onDone={(n) => { closeSheet(); show(`${n}건을 CSV로 내려받았어요`); }} />
+          <ExportForm allTx={allTx} members={members} cards={ledger.cards} ym={ym} onDone={(n) => { closeSheet(); show(`${n}건을 CSV로 내려받았어요`); }} />
+        </Sheet>
+      )}
+
+      {sheet?.kind === 'search' && (
+        <Sheet title="상세 검색" onClose={closeSheet}>
+          <AdvancedSearch allTx={allTx} members={members} cards={ledger.cards} tags={tagList}
+            filters={searchFilters} onFilters={setSearchFilters} onOpen={(id) => setSheet({ kind: 'edit', id, back: 'search' })} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'cards' && (
+        <Sheet title="신용카드" onClose={closeSheet}>
+          <CardManager cards={ledger.cards} usage={cardUsage} onSave={saveCards} />
         </Sheet>
       )}
 
@@ -431,6 +493,8 @@ export default function App() {
       )}
 
       <Toast toast={toast} onHide={hide} />
+    </FormDataContext.Provider>
+    </CategoryActionsContext.Provider>
     </CategoriesContext.Provider>
   );
 }
