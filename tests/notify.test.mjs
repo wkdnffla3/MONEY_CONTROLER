@@ -95,4 +95,53 @@ for (let i = 0; i < 30; i += 1) {
   assert.ok(createVerify('SHA256').update('hello').verify(createPublicKey({ key: pubJwk, format: 'jwk' }), sig));
 }
 
+
+
+// 10. 리포트 기간 (서울 기준)
+{
+  const { reportRange, buildReport } = await import('../supabase/functions/_shared/notifyMessage.js');
+  // 2026-11-16(월) 오전 9시 KST = 00:00 UTC
+  const mon = new Date(Date.UTC(2026, 10, 16, 0, 0));
+  assert.deepEqual(reportRange('week', mon), { cur: { start: '2026-11-09', end: '2026-11-15' }, prev: { start: '2026-11-02', end: '2026-11-08' } });
+  // 일요일 밤 11시 KST 에 돌려도 "지난주"는 그 전 주
+  assert.equal(reportRange('week', new Date(Date.UTC(2026, 10, 15, 14, 0))).cur.start, '2026-11-02');
+  // UTC로는 아직 일요일(15일 23:30)이지만 서울은 월요일 08:30 → 지난주 = 9~15일
+  assert.equal(reportRange('week', new Date(Date.UTC(2026, 10, 15, 23, 30))).cur.start, '2026-11-09');
+  const dec1 = new Date(Date.UTC(2026, 11, 1, 0, 0));
+  assert.deepEqual(reportRange('month', dec1), { cur: { start: '2026-11-01', end: '2026-11-30', month: 11 }, prev: { start: '2026-10-01', end: '2026-10-31' } });
+  const jan1 = new Date(Date.UTC(2027, 0, 1, 0, 0));
+  assert.deepEqual(reportRange('month', jan1).cur, { start: '2026-12-01', end: '2026-12-31', month: 12 });
+  assert.equal(reportRange('month', new Date(Date.UTC(2028, 2, 1, 0, 0))).cur.end, '2028-02-29'); // 윤년
+  assert.throws(() => reportRange('day', mon));
+
+  // 11. 리포트 문구
+  const r = reportRange('week', mon);
+  const txs = [
+    { type: 'expense', amount: 120000, category: '식비', date: '2026-11-10' },
+    { type: 'expense', amount: 80000, category: '교통', date: '2026-11-15' },
+    { type: 'income', amount: 50000, category: '용돈', date: '2026-11-12' },
+    { type: 'expense', amount: 250000, category: '식비', date: '2026-11-03' }, // 그 전주
+    { type: 'expense', amount: 999999, category: '쇼핑', date: '2026-11-16' }, // 이번 주 → 제외
+  ];
+  let w = buildReport({ period: 'week', range: r, txs });
+  assert.equal(w.kind, 'weekly');
+  assert.equal(w.title, '지난주 지출 200,000원');
+  assert.equal(w.body, '그 전주보다 20% 줄었어요 · 가장 많이 쓴 곳 식비 120,000원');
+  assert.equal(w.tag, 'weekly-2026-11-09');
+  assert.equal(buildReport({ period: 'week', range: r, txs: txs.slice(3) }), null); // 지난주 내역 없음 → 안 보냄
+  w = buildReport({ period: 'week', range: r, txs: txs.slice(0, 2) }); // 비교 대상 없음
+  assert.equal(w.body, '가장 많이 쓴 곳 식비 120,000원');
+  const mr = reportRange('month', dec1);
+  const m = buildReport({ period: 'month', range: mr, budget: 400000, txs: [
+    { type: 'expense', amount: 300000, category: '식비', date: '2026-11-05' },
+    { type: 'income', amount: 3000000, category: '월급', date: '2026-11-25' },
+    { type: 'expense', amount: 300000, category: '식비', date: '2026-10-05' },
+  ] });
+  assert.equal(m.title, '11월 지출 300,000원');
+  assert.equal(m.body, '그 전달과 비슷해요 · 수입 3,000,000원 · 예산의 75% · 가장 많이 쓴 곳 식비 300,000원');
+  assert.equal(m.url, '/#report');
+  assert.equal(shouldSend('weekly', { weekly: false }), false);
+  assert.equal(shouldSend('monthly', {}), true);
+  console.log('report unit tests: all passed');
+}
 console.log('notify unit tests: all passed');

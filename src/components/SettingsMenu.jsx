@@ -1,4 +1,6 @@
 const ITEMS = [
+  ['share', '🏠', '가계부 공유', '각자 계정으로 같은 가계부 쓰기'],
+  ['favorites', '⭐', '즐겨찾기', '자주 쓰는 내역 한 번에 입력'],
   ['recurring', '🔁', '반복 내역', '월세·구독료·월급 자동 기록'],
   ['categories', '🏷️', '카테고리 편집', '추가·이름 변경·순서·삭제'],
   ['catBudgets', '🎯', '카테고리별 예산', '카테고리마다 한도 정하기'],
@@ -10,7 +12,7 @@ const ITEMS = [
   ['export', '📄', 'CSV 내보내기', '엑셀에서 열기, 백업'],
 ];
 
-export default function SettingsMenu({ onOpen, counts = {} }) {
+export default function SettingsMenu({ onOpen, counts = {}, shared = false }) {
   return (
     <ul className="menu-list">
       {ITEMS.map(([kind, icon, title, desc]) => (
@@ -18,6 +20,7 @@ export default function SettingsMenu({ onOpen, counts = {} }) {
           <button type="button" onClick={() => onOpen(kind)}>
             <span className="mi">{icon}</span>
             <span className="mt"><b>{title}</b><small>{desc}</small></span>
+            {kind === 'share' && shared ? <span className="share-badge">공유 중</span> : null}
             {counts[kind] ? <span className="mc">{counts[kind]}</span> : null}
             <span className="chev" aria-hidden="true">›</span>
           </button>

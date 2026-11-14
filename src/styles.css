@@ -571,3 +571,57 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .ns-quiet{display:flex;align-items:center;gap:8px}
 .ns-quiet.off{opacity:.5}
 .ns-quiet input{padding:9px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);font-size:14.5px}
+.ns-sub{display:block;font-size:12px;color:var(--muted);margin-top:1px}
+.notify-settings .check{align-items:flex-start}
+.notify-settings .check input{margin-top:1px;flex:none}
+
+/* ===== 가계부 공유 ===== */
+.share-people{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.share-people li{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.sp-dot{width:10px;height:10px;border-radius:50%;flex:none}
+.sp-main{flex:1;min-width:0;display:grid;gap:2px}
+.sp-main b{font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sp-main small{font-size:12px;color:var(--muted)}
+.sp-actions{display:flex;gap:6px;flex:none}
+.invite-box{display:grid;gap:8px}
+.invite-code{font-size:26px;font-weight:800;letter-spacing:.08em;text-align:center;padding:14px;border-radius:14px;background:var(--accent-soft);color:var(--accent);font-variant-numeric:tabular-nums;user-select:all}
+.join-row{display:flex;gap:8px}
+.join-row input{flex:1;min-width:0;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:16px;text-transform:uppercase;letter-spacing:.05em}
+.join-confirm{display:grid;gap:10px}
+.join-name{margin-left:6px;width:120px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-size:14px}
+.join-name:disabled{opacity:.5}
+.hint.warn{color:var(--expense)}
+.share-badge{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:700;color:var(--accent);background:var(--accent-soft);padding:3px 8px;border-radius:99px}
+
+/* ===== 즐겨찾기 ===== */
+.fav-bar{padding:14px 16px}
+.fav-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.fav-head h2{margin:0}
+.link-btn{font-size:13px;font-weight:600;color:var(--accent)}
+.fav-chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.fav-chips::-webkit-scrollbar{display:none}
+.fav-chip{flex:none;display:grid;grid-template-columns:auto 1fr;grid-template-rows:auto auto;column-gap:7px;align-items:center;text-align:left;padding:9px 13px 9px 10px;border-radius:14px;border:1px solid var(--line);background:var(--surface-2);transition:transform .08s,border-color .12s}
+.fav-chip:hover{border-color:var(--accent)}
+.fav-chip:active{transform:scale(.97)}
+.fav-chip .fi{grid-row:1/3;font-size:20px}
+.fav-chip .fl{font-size:13.5px;font-weight:700;color:var(--ink);white-space:nowrap}
+.fav-chip .fa{font-size:12px;color:var(--expense);white-space:nowrap;font-variant-numeric:tabular-nums}
+.fav-chip.income .fa{color:var(--income)}
+.fav-empty{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13.5px;color:var(--muted)}
+.fav-empty .btn{flex:none}
+.fav-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.fav-list li{display:flex;align-items:stretch;gap:6px}
+.fav-row{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);text-align:left}
+.fav-row .fi{font-size:20px;flex:none}
+.fr-main{flex:1;min-width:0;display:grid;gap:2px}
+.fr-main b{font-size:14px;color:var(--ink)}
+.fr-main small{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fr-amt{font-size:13.5px;font-weight:600;color:var(--expense);white-space:nowrap}
+.fr-amt.income{color:var(--income)}
+.fr-move{display:grid;gap:4px}
+.fr-move button{width:34px;border:1px solid var(--line);border-radius:8px;background:var(--surface);font-size:11px;color:var(--muted)}
+.fr-move button:disabled{opacity:.35}
+.fav-add-btn{width:100%;margin-top:4px}
+/* 가로 스크롤 줄이 그리드를 넓히지 않게 */
+.fav-bar{min-width:0;max-width:100%;overflow:hidden}
+.grid > .fav-bar{min-width:0}
