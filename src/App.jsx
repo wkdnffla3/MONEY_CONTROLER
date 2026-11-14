@@ -45,6 +45,10 @@ import CardBills from './components/CardBills';
 import MonthCompare from './components/MonthCompare';
 import AdvancedSearch, { EMPTY_FILTERS } from './components/AdvancedSearch';
 import ReportPage from './components/ReportPage';
+import NotifyBanner from './components/NotifyBanner';
+import NotificationSettings from './components/NotificationSettings';
+import { useNotifier } from './hooks/useNotifier';
+import { disablePush } from './lib/push';
 
 // 페이지: 주소 끝이 #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
 const PAGES = ['shopping', 'report'];
@@ -61,7 +65,11 @@ const savedSuffix = (synced, online) =>
 
 export default function App() {
   const auth = useAuth();
-  const ledger = useLedger(auth.user?.id);
+  // 다른 기기에서 추가한 내역 → 알림 (notifier는 사람 목록이 필요해서 ledger 다음에 만들고 ref로 연결)
+  const notifyRef = useRef(null);
+  const ledger = useLedger(auth.user?.id, { onRemote: (n) => notifyRef.current?.(n) });
+  const notifier = useNotifier(auth.user?.id, ledger.members);
+  notifyRef.current = notifier.notify;
   const { toast, show, hide } = useToast();
 
   const [ym, setYm] = useState(thisMonth);
@@ -129,6 +137,18 @@ export default function App() {
   // 새 내역의 기본 "누가": 특정 사람 보기 중이면 그 사람, 아니면 이 기기의 사람
   const formDefaultMember = whoValid !== 'all' && whoValid !== SHARED ? whoValid : meId;
   const defaultDate = isCurrentMonth(ym) ? todayStr() : `${ym.y}-${pad(ym.m)}-01`;
+
+  // 알림을 누르면 해당 페이지로 (앱 안 배너, 또는 서비스워커가 보낸 메시지)
+  const openNotified = (url) => changePage(String(url || '').includes('#shopping') ? 'shopping' : 'ledger');
+  const openNotifiedRef = useRef(openNotified);
+  openNotifiedRef.current = openNotified;
+  useEffect(() => {
+    const sw = navigator.serviceWorker;
+    if (!sw) return undefined;
+    const onMsg = (e) => { if (e.data?.type === 'navigate') openNotifiedRef.current(e.data.url); };
+    sw.addEventListener('message', onMsg);
+    return () => sw.removeEventListener('message', onMsg);
+  }, []);
 
   // ---- 키보드 ←/→ 로 달 이동 ----
   useEffect(() => {
@@ -252,6 +272,8 @@ export default function App() {
   // 아직 못 올린 내역이 있으면 먼저 확인.
   const doSignOut = async () => {
     closeSheet();
+    // 이 기기의 웹 푸시 해제 (다음 사람이 이 기기를 써도 알림이 오지 않게). 오래 걸리면 기다리지 않음
+    await Promise.race([disablePush().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
     ledger.clearLocalData();
     await auth.signOut();
   };
@@ -463,6 +485,12 @@ export default function App() {
             filters={searchFilters} onFilters={setSearchFilters} onOpen={(id) => setSheet({ kind: 'edit', id, back: 'search' })} />
         </Sheet>
       )}
+      {sheet?.kind === 'notify' && notifier.prefs && (
+        <Sheet title="알림" onClose={closeSheet}>
+          <NotificationSettings uid={uid} prefs={notifier.prefs} onPrefs={notifier.setPrefs}
+            onPushChange={notifier.refreshPush} onToast={show} />
+        </Sheet>
+      )}
       {sheet?.kind === 'cards' && (
         <Sheet title="신용카드" onClose={closeSheet}>
           <CardManager cards={ledger.cards} usage={cardUsage} onSave={saveCards} />
@@ -492,6 +520,7 @@ export default function App() {
         </Sheet>
       )}
 
+      <NotifyBanner banners={notifier.banners} onDismiss={notifier.dismiss} onOpen={openNotified} />
       <Toast toast={toast} onHide={hide} />
     </FormDataContext.Provider>
     </CategoryActionsContext.Provider>
