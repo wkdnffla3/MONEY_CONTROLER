@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate } from '../src/lib/recurring.js';
-import { csvCell, toCsv } from '../src/lib/csv.js';
-import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../src/lib/shopping.js';
-import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../src/lib/outbox.js';
+import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate } from '../../src/lib/recurring.js';
+import { csvCell, toCsv } from '../../src/lib/csv.js';
+import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../../src/lib/shopping.js';
+import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../../src/lib/outbox.js';
 
 const D = (s) => new Date(`${s}T12:00:00`);
 const rule = (o = {}) => ({ id: 'r1', type: 'expense', amount: 500000, category: '주거·통신', memo: '월세', memberId: null,

@@ -4,23 +4,41 @@
  * - Supabase 등 다른 도메인 요청과 GET 이외 요청은 건드리지 않음 → 내역 데이터는 캐시하지 않음
  * 캐시 구조를 바꿀 때만 VERSION 을 올리세요.
  */
-const VERSION = 'v1'; // 알림 코드를 추가해도 캐시 구조는 같아서 그대로
+const VERSION = 'v2'; // v2: 화면을 나눠 불러오게 바뀌어서, 설치할 때 나뉜 화면 파일까지 모두 저장
 const SHELL_CACHE = `ledger-shell-${VERSION}`;
 const ASSET_CACHE = `ledger-assets-${VERSION}`;
 const SHELL_URLS = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
 
-// index.html 이 불러오는 빌드 파일(/assets/...)도 설치할 때 함께 저장
-// → 첫 방문 직후에도 오프라인에서 화면이 열림
+// index.html 이 불러오는 빌드 파일(/assets/...)과, 그 파일들이 불러오는 나뉜 화면 파일까지 설치할 때 모두 저장
+// → 첫 방문 직후에도 오프라인에서 모든 화면이 열림
+const MAX_ASSETS = 200;
+const assetRefs = (text, base) => {
+  const out = [];
+  // "./chunk-abc.js" 처럼 상대 경로로 불러오는 파일, "assets/x-abc.js" / "/assets/x.css" 처럼 적힌 파일
+  for (const m of text.matchAll(/["'`](\.\.?\/[^"'`\s]+\.(?:js|css))["'`]/g)) out.push(new URL(m[1], base).pathname);
+  for (const m of text.matchAll(/["'`(]\/?(assets\/[^"'`\s)]+\.(?:js|css))["'`)]/g)) out.push(`/${m[1]}`);
+  return out.filter((p) => p.startsWith('/assets/'));
+};
 async function precache() {
   const shell = await caches.open(SHELL_CACHE);
   await shell.addAll(SHELL_URLS);
   try {
     const res = await shell.match('/');
     const html = res ? await res.text() : '';
-    const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]))];
-    if (assets.length) await (await caches.open(ASSET_CACHE)).addAll(assets);
+    const queue = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
+    const seen = new Set();
+    const cache = await caches.open(ASSET_CACHE);
+    while (queue.length && seen.size < MAX_ASSETS) {
+      const path = queue.shift();
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const r = await fetch(path, { cache: 'no-cache' });
+      if (!r.ok) continue;
+      await cache.put(path, r.clone());
+      if (path.endsWith('.js')) queue.push(...assetRefs(await r.text(), new URL(path, self.location.origin)));
+    }
   } catch {
-    // 실패해도 다음 방문 때 fetch 단계에서 채워짐
+    // 실패해도 앱이 한가할 때 미리 받기(lazyScreens)와 fetch 단계에서 채워짐
   }
 }
 

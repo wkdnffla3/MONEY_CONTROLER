@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { firstBillMonth, payDate, chargesOf, cardBills } from '../src/lib/cards.js';
-import { compareMonths, yearReport, searchTx, allTags, calendarMonth, lastPrices, normalizeName } from '../src/lib/analysis.js';
-import { isValidTx, isValidTags, isValidCards } from '../src/lib/outbox.js';
+import { firstBillMonth, payDate, chargesOf, cardBills } from '../../src/lib/cards.js';
+import { compareMonths, yearReport, searchTx, allTags, calendarMonth, lastPrices, normalizeName } from '../../src/lib/analysis.js';
+import { isValidTx, isValidTags, isValidCards } from '../../src/lib/outbox.js';
 
 // ---------- 카드 ----------
 const card = { id: 'c1', name: '신한', payDay: 14, closeDay: 31, color: 0 };    // 말일 마감, 14일 결제
@@ -106,9 +106,9 @@ console.log('analysis unit tests: all passed');
 
 // ===== 구독 자동 발견 =====
 {
-  const { detectSubscriptions, ruleFromSuggestion, subscriptionKey } = await import('../src/lib/subscriptions.js');
-  const { isValidRecurring } = await import('../src/lib/outbox.js');
-  const { dueMonths } = await import('../src/lib/recurring.js');
+  const { detectSubscriptions, ruleFromSuggestion, subscriptionKey } = await import('../../src/lib/subscriptions.js');
+  const { isValidRecurring } = await import('../../src/lib/outbox.js');
+  const { dueMonths } = await import('../../src/lib/recurring.js');
   const today = new Date(2026, 10, 20); // 2026-11-20
   const tx = (id, date, amount, category, memo = '', type = 'expense') => ({ id, date, amount, category, memo, type, memberId: null });
   const list = [

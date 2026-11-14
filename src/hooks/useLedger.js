@@ -425,7 +425,15 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       setToday(new Date().toDateString());
       load(); flushRef.current();
     };
-    const dayTimer = setInterval(() => setToday(new Date().toDateString()), 60 * 60 * 1000);
+    // 날짜가 바뀌는 자정(+5초)에 맞춰 갱신 → 그달 1일 반복 내역·'오늘' 표시가 바로 바뀜.
+    // 기기가 잠들면 타이머가 늦어질 수 있어 최대 1시간 단위로 다시 맞추고, 앱으로 돌아올 때도 확인(onVisible)
+    let dayTimer = null;
+    const armDayTimer = () => {
+      const now = new Date();
+      const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 5);
+      dayTimer = setTimeout(() => { setToday(new Date().toDateString()); armDayTimer(); }, Math.min(next - now, 60 * 60 * 1000));
+    };
+    armDayTimer();
     // 다른 탭이 목록을 바꾸면 따라감 (다른 탭이 전송을 끝낸 경우 서버 상태를 새로 받음)
     const onStorage = (e) => {
       if (e.key !== queueStorageKey(userId) || storageBroken.current) return;
@@ -441,7 +449,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     return () => {
       clearTimeout(retryTimer.current);
       clearTimeout(lockTimer.current);
-      clearInterval(dayTimer);
+      clearTimeout(dayTimer);
       supabase.removeChannel(channel);
       clearTimeout(reloadTimer);
       document.removeEventListener('visibilitychange', onVisible);

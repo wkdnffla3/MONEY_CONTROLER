@@ -14,53 +14,45 @@ import Summary from './components/Summary';
 import BudgetCard from './components/BudgetCard';
 import CategoryDonut from './components/CategoryDonut';
 import DailyChart from './components/DailyChart';
-import TxList from './components/TxList';
 import TxForm from './components/TxForm';
-import BudgetForm from './components/BudgetForm';
 import Sheet from './components/Sheet';
 import Toast from './components/Toast';
 import MemberSummary from './components/MemberSummary';
-import MembersForm from './components/MembersForm';
 import WhoFilter from './components/WhoFilter';
 import { SHARED, filterByOwner, findMember, getMe, setMe } from './lib/members';
 import InstallBanner from './components/InstallBanner';
 import { PlusIcon } from './components/Icons';
-import { AuthScreen, NewPasswordScreen } from './components/AuthScreen';
-import RecurringManager from './components/RecurringManager';
-import CategoryEditor from './components/CategoryEditor';
 import { CategoryBudgetCard, CategoryBudgetForm } from './components/CategoryBudget';
 import MonthlyTrend from './components/MonthlyTrend';
-import ExportForm from './components/ExportForm';
 import SettingsMenu from './components/SettingsMenu';
 import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
-import ShoppingPage from './components/ShoppingPage';
-import ShopItemForm from './components/ShopItemForm';
-import PurchaseConfirm from './components/PurchaseConfirm';
 import { summarize as summarizeShopping } from './lib/shopping';
 import { FormDataContext } from './lib/formData';
 import { allTags, compareMonths, lastPrices as computeLastPrices } from './lib/analysis';
-import CardManager from './components/CardManager';
 import CardBills from './components/CardBills';
 import MonthCompare from './components/MonthCompare';
-import AdvancedSearch, { EMPTY_FILTERS } from './components/AdvancedSearch';
-import ReportPage from './components/ReportPage';
 import NotifyBanner from './components/NotifyBanner';
-import NotificationSettings from './components/NotificationSettings';
 import { useNotifier } from './hooks/useNotifier';
 import { disablePush } from './lib/push';
 import { useHousehold } from './hooks/useHousehold';
 import { normalizeCode, writeHousehold } from './lib/household';
 import { clearUserData } from './lib/outbox';
-import SharePanel from './components/SharePanel';
 import FavoritesBar from './components/FavoritesBar';
-import FavoritesManager from './components/FavoritesManager';
 import { useComments } from './hooks/useComments';
 import CommentThread from './components/CommentThread';
-import ActivityLog from './components/ActivityLog';
 import SubscriptionFinder from './components/SubscriptionFinder';
 import { detectSubscriptions, ruleFromSuggestion } from './lib/subscriptions';
 import { isValidItem, isValidTx } from './lib/outbox';
+import { EMPTY_FILTERS } from './lib/searchFilters';
+import { Lazy, prefetchScreens } from './lib/lazyScreens';
+import ScreenBoundary from './components/ScreenBoundary';
+
+// 첫 화면에 필요 없는 화면들: 필요할 때 불러옴 (lib/lazyScreens.js)
+const {
+  TxList, ReportPage, ShoppingPage, ShopItemForm, PurchaseConfirm, RecurringManager, CategoryEditor, ExportForm, CardManager,
+  AdvancedSearch, NotificationSettings, SharePanel, FavoritesManager, ActivityLog, MembersForm, BudgetForm, AuthScreen, NewPasswordScreen,
+} = Lazy;
 
 // 페이지: 주소 끝이 #list 면 내역, #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
 const PAGES = ['list', 'shopping', 'report'];
@@ -163,6 +155,9 @@ export default function App() {
     window.history.replaceState(null, '', window.location.pathname + window.location.hash);
     setSheet({ kind: 'edit', id: txId });
   }, [uid]);
+
+  // 첫 화면이 뜬 뒤 한가할 때 나머지 화면을 미리 받아 둠 (오프라인 대비, 탭 이동이 즉시)
+  useEffect(() => { if (uid) prefetchScreens(); }, [uid]);
 
   // 초대 링크(?join=코드)로 열면 로그인 후 공유 화면을 코드와 함께 열기
   useEffect(() => {
@@ -417,9 +412,9 @@ export default function App() {
   }
   if (auth.loading) return null;
   if (auth.recovering) {
-    return <NewPasswordScreen onDone={() => { auth.endRecovery(); show('비밀번호를 바꿨어요'); }} />;
+    return <ScreenBoundary><NewPasswordScreen onDone={() => { auth.endRecovery(); show('비밀번호를 바꿨어요'); }} /></ScreenBoundary>;
   }
-  if (!auth.user) return <AuthScreen />;
+  if (!auth.user) return <ScreenBoundary><AuthScreen /></ScreenBoundary>;
 
   const editing = sheet?.kind === 'edit' ? allTx.find((t) => t.id === sheet.id) : null;
 
@@ -464,6 +459,7 @@ export default function App() {
 
         <NavTabs page={page} onChange={changePage} todoCount={shopSummary.todo - shopSummary.cart} cartCount={shopSummary.cart} />
 
+        <ScreenBoundary key={page}>
         {page === 'shopping' ? (
           <ShoppingPage items={shopItems} members={members} defaultMemberId={meId} actions={shop} />
         ) : page === 'report' ? (
@@ -531,6 +527,7 @@ export default function App() {
           {sideForm}
         </div>
         )}
+        </ScreenBoundary>
       </div>
 
       <button type="button" className={`fab ${page === 'shopping' ? 'fab-shop' : ''}`}
