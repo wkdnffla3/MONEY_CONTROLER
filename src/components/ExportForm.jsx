@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
-import { downloadText, toCsv } from '../lib/csv';
+import { downloadText } from '../lib/csv';
+import { buildTxCsv } from '../lib/exportTx';
 import { SHARED, SHARED_LABEL, filterByOwner, findMember } from '../lib/members';
-import { isRecurringTxId } from '../lib/recurring';
-import { isShoppingTxId } from '../lib/shopping';
 import { pad, ymKey } from '../lib/format';
 
 /** 내역을 CSV로 내려받기 (엑셀·구글 시트에서 열 수 있음) */
-export default function ExportForm({ allTx, members, ym, onDone }) {
+export default function ExportForm({ allTx, members, cards = [], ym, onDone }) {
   const [scope, setScope] = useState('month'); // month | year | all | range
   const [from, setFrom] = useState(`${ym.y}-01`);
   const [to, setTo] = useState(ymKey(ym.y, ym.m));
@@ -36,17 +35,7 @@ export default function ExportForm({ allTx, members, ym, onDone }) {
   const download = () => {
     if (scope === 'range' && from > to) { setError('시작 월이 끝 월보다 늦어요.'); return; }
     if (!rows.length) { setError('내보낼 내역이 없어요.'); return; }
-    const header = ['날짜', '구분', '카테고리', '금액', '메모', ...(members.length ? ['누가'] : []), '출처'];
-    const body = rows.map((t) => [
-      t.date,
-      t.type === 'income' ? '수입' : '지출',
-      t.category,
-      t.amount,
-      t.memo || '',
-      ...(members.length ? [findMember(members, t.memberId)?.name || SHARED_LABEL] : []),
-      isRecurringTxId(t.id) ? '반복' : isShoppingTxId(t.id) ? '장보기' : '',
-    ]);
-    const ok = downloadText(fileName(), toCsv(header, body));
+    const ok = downloadText(fileName(), buildTxCsv(rows, { members, cards }));
     if (!ok) { setError('이 브라우저에서는 내려받을 수 없어요.'); return; }
     onDone(rows.length);
   };

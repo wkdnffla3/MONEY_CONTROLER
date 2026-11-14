@@ -410,3 +410,139 @@ button.sync:hover{background:var(--surface-2);color:var(--ink)}
 body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 @media (max-width:639px){ body:has(.cart-bar) .toast{bottom:calc(160px + env(safe-area-inset-bottom))} body:has(.cart-bar) .fab-shop{bottom:calc(92px + env(safe-area-inset-bottom))} }
 .shop-sum b{white-space:nowrap;font-size:clamp(15px, 4.4vw, 19px)}
+
+/* ---- 입력 폼에서 카테고리 추가 ---- */
+.chip.add-chip{border-style:dashed;color:var(--accent);font-weight:600;background:transparent}
+.chip.add-chip:hover{background:var(--accent-soft)}
+.add-cat{display:grid;grid-template-columns:48px 1fr auto 32px;gap:6px;align-items:center;width:100%;padding:8px;border:1px dashed var(--accent);border-radius:14px;background:var(--surface)}
+.add-cat > input:not(.icon-in){width:100%;min-width:0;padding:8px 10px;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);font-size:15px}
+.add-cat > input:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+.add-cat .icon-in{padding:6px 2px;font-size:17px}
+.add-cat-err{grid-column:1/-1;min-height:0}
+
+/* ---- 빠른 추가: 이름 · 가격 · 카테고리 · 추가 · 자세히 ---- */
+.quick-add{grid-template-columns:1fr 120px 140px auto auto}
+.select.sm{padding:9px 10px;font-size:14px;border-radius:12px;min-width:0}
+@media (max-width:639px){
+  .quick-add{grid-template-columns:1fr 1fr}
+  .quick-add > input{grid-column:1/-1}
+  .quick-add .btn{grid-column:auto}
+}
+
+/* ---- 태그 ---- */
+.tag-input{display:grid;gap:6px}
+.tag-box{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);min-height:44px}
+.tag-box:focus-within{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+.tag-box input{flex:1;min-width:120px;border:0!important;background:transparent!important;outline:none!important;padding:4px!important;font-size:15px}
+.tag{display:inline-flex;align-items:center;gap:2px;background:var(--accent-soft);color:var(--accent);font-size:13px;font-weight:600;border-radius:99px;padding:2px 4px 2px 10px}
+.tag button{width:20px;height:20px;border-radius:50%;font-size:10px;color:var(--accent)}
+.tag button:hover{background:rgba(0,0,0,.08)}
+.tag-recs{display:flex;flex-wrap:wrap;gap:4px}
+.tag-rec{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:99px;padding:2px 9px}
+.tag-rec:hover{color:var(--accent);border-color:var(--accent)}
+.tag-mark{font-size:11.5px;color:var(--accent);margin-left:5px}
+.card-mark{font-size:11.5px;color:var(--muted)}
+
+/* ---- 결제수단·할부 ---- */
+.inst-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px}
+.inst-row label{font-size:12.5px;font-weight:600;color:var(--muted);margin:0}
+.inst-row .select{width:auto}
+.swatch-btn{width:30px;height:30px;border-radius:9px;border:2px solid var(--surface);box-shadow:0 0 0 1px var(--line)}
+.swatch-btn[aria-pressed="true"]{box-shadow:0 0 0 2px var(--ink)}
+.bill-table{width:100%;border-collapse:collapse;font-size:14px}
+.bill-table th,.bill-table td{padding:6px 4px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+.bill-table th:first-child{text-align:left;font-weight:600}
+.bill-table thead th{font-size:12px;font-weight:500;color:var(--muted)}
+.bill-table tfoot th,.bill-table tfoot td{border-bottom:0;font-weight:700}
+.bill-cell{display:inline-grid;justify-items:end;padding:3px 6px;border-radius:8px;line-height:1.25}
+.bill-cell:not(:disabled):hover{background:var(--surface-2)}
+.bill-cell[aria-expanded="true"]{background:var(--accent-soft)}
+.bill-cell small{font-size:11px;color:var(--muted)}
+.bill-cell:disabled{cursor:default;opacity:.7}
+.bill-items{list-style:none;margin-top:8px;padding:8px 10px;background:var(--surface-2);border-radius:12px;display:grid;gap:5px;font-size:13px}
+.bill-items li{display:flex;justify-content:space-between;gap:8px}
+.bill-items small{color:var(--muted)}
+
+/* ---- 지난달 대비 ---- */
+.cmp-head{display:flex;align-items:baseline;gap:8px}
+.cmp-head b{font-size:19px}
+.cmp-head.up b,.cmp-head.up span{color:var(--expense)}
+.cmp-head.down b,.cmp-head.down span{color:var(--accent)}
+.cmp-list{list-style:none;display:grid;gap:4px;margin-top:8px}
+.cmp-list li{display:grid;grid-template-columns:1fr auto 64px;gap:8px;font-size:13.5px;align-items:center}
+.cmp-list .num{font-weight:600}
+.cmp-list .p{text-align:right;font-size:12px;color:var(--muted)}
+.cmp-list li.up .num{color:var(--expense)} .cmp-list li.down .num{color:var(--accent)}
+
+/* ---- 달력 ---- */
+.calendar{margin-bottom:12px}
+.cal-head,.cal-week{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-head div{text-align:center;font-size:11.5px;color:var(--muted);padding:2px 0 6px}
+.cal-head .sun,.cal-cell.sun .d{color:var(--expense)} .cal-head .sat,.cal-cell.sat .d{color:var(--income)}
+.cal-week{margin-bottom:3px}
+.cal-cell{min-height:58px;border-radius:9px;padding:4px 4px 3px;display:flex;flex-direction:column;align-items:flex-start;background:var(--surface-2);border:1px solid transparent;text-align:left;overflow:hidden}
+.cal-cell.empty{background:transparent}
+.cal-cell .d{font-size:12px;font-weight:600}
+.cal-cell .e{font-size:10.5px;font-weight:600;color:var(--expense);margin-top:auto;line-height:1.2}
+.cal-cell .i{font-size:10.5px;font-weight:600;color:var(--income);line-height:1.2}
+.cal-cell.lv1{background:color-mix(in srgb, var(--expense) 10%, var(--surface))}
+.cal-cell.lv2{background:color-mix(in srgb, var(--expense) 20%, var(--surface))}
+.cal-cell.lv3{background:color-mix(in srgb, var(--expense) 32%, var(--surface))}
+.cal-cell.lv4{background:color-mix(in srgb, var(--expense) 46%, var(--surface))}
+.cal-cell.today{border-color:var(--ink)}
+.cal-cell.sel{outline:2px solid var(--accent);outline-offset:1px}
+.cal-legend{display:flex;align-items:center;gap:4px;justify-content:flex-end;font-size:11px;color:var(--muted);margin-top:4px}
+.cal-legend i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.cal-legend i.lv1{background:color-mix(in srgb, var(--expense) 10%, var(--surface))} .cal-legend i.lv2{background:color-mix(in srgb, var(--expense) 20%, var(--surface))}
+.cal-legend i.lv3{background:color-mix(in srgb, var(--expense) 32%, var(--surface))} .cal-legend i.lv4{background:color-mix(in srgb, var(--expense) 46%, var(--surface))}
+@media (min-width:640px){ .cal-cell{min-height:70px;padding:6px} .cal-cell .e,.cal-cell .i{font-size:11.5px} }
+
+/* ---- 상세 검색 ---- */
+.adv-search input[type=search],.adv-search input[type=date]{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:15px}
+.adv-more{border:1px solid var(--line);border-radius:12px;padding:8px 12px}
+.adv-more summary{cursor:pointer;font-size:13.5px;font-weight:600;color:var(--accent);padding:4px 0}
+.adv-more[open]{display:grid;gap:12px;padding-bottom:12px}
+.range-row{display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center}
+.search-sum{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line)}
+.search-sum > div:first-child{display:grid}
+.search-sum b{font-size:17px}
+.search-sum span{font-size:12.5px;color:var(--muted)}
+.search-sum .acts{display:flex;align-items:center;gap:4px}
+.search-results{list-style:none}
+.search-results button{width:100%;display:grid;grid-template-columns:62px 1fr auto;gap:10px;align-items:center;padding:9px 2px;border-bottom:1px solid var(--line);text-align:left}
+.search-results button:hover{background:var(--surface-2)}
+.search-results .dt{font-size:12px;color:var(--muted)}
+.search-results .mid{display:grid;min-width:0}
+.search-results .c{font-size:14px;font-weight:600}
+.search-results .c small{font-weight:400;color:var(--muted)}
+.search-results .m{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.search-results .a{font-weight:600;font-size:14px}
+.search-results .a.inc{color:var(--income)}
+.toolbar .btn.sm{white-space:nowrap}
+
+/* ---- 리포트 ---- */
+.report{max-width:1180px}
+.year-bar .label small{font-size:11px}
+.share-list{list-style:none;display:grid;gap:7px}
+.share-list li{display:grid;grid-template-columns:minmax(80px,1.1fr) 1fr auto 40px;gap:8px;align-items:center;font-size:13.5px}
+.share-list .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.share-list .nm small{font-size:11px;color:var(--muted);margin-left:4px;font-weight:400}
+.share-list .bar{height:8px;margin:0;border-radius:99px}
+.share-list .bar > span{display:block;height:100%;border-radius:99px}
+.share-list .p{text-align:right;color:var(--muted);font-size:12px}
+.top-list{list-style:none;display:grid;gap:8px;counter-reset:top}
+.top-list li{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;font-size:14px;counter-increment:top}
+.top-list li::before{content:counter(top);width:22px;height:22px;border-radius:7px;background:var(--surface-2);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--muted)}
+.top-list .nm{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.top-list .nm small{font-size:11.5px;color:var(--muted);margin-left:6px}
+.top-list .num{font-weight:600}
+
+/* ---- 지난 구매가 ---- */
+.last-price{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.last-price.quick{grid-column:1/-1;margin:-2px 2px 0}
+.last-diff{color:var(--warn)}
+.cal-cell .e,.cal-cell .i{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:clip;letter-spacing:-.04em}
+@media (max-width:420px){ .cal-cell{padding:3px} .cal-cell .e,.cal-cell .i{font-size:9.5px} }
+.cal-legend .e{color:var(--expense);font-weight:600} .cal-legend .i{color:var(--income);font-weight:600;margin-left:6px}
+.cal-legend .sp{flex:1}
+.search-sum .linkbtn{white-space:nowrap}

@@ -1,8 +1,9 @@
-/** 페이지 탭: 가계부 / 장보기 (주소 #shopping 로 바로 열 수 있음) */
+/** 페이지 탭: 가계부 / 장보기 / 리포트 (주소 #shopping, #report 로 바로 열 수 있음) */
 export default function NavTabs({ page, onChange, cartCount = 0, todoCount = 0 }) {
   const tabs = [
     ['ledger', '가계부', null],
     ['shopping', '장보기', todoCount + cartCount || null],
+    ['report', '리포트', null],
   ];
   return (
     <nav className="nav-tabs" aria-label="페이지">

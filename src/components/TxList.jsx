@@ -3,20 +3,29 @@ import { SearchIcon } from './Icons';
 import { iconOf, useCategories } from '../lib/categories';
 import { isRecurringTxId } from '../lib/recurring';
 import { isShoppingTxId } from '../lib/shopping';
+import { useFormData } from '../lib/formData';
+import CalendarView from './CalendarView';
 import { findMember, memberColor } from '../lib/members';
 import { WEEKDAYS, sumByType, todayStr, won } from '../lib/format';
 
 const FILTERS = [['all', '전체'], ['expense', '지출'], ['income', '수입']];
 
-export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [] }) {
+/**
+ * view: 'list' | 'calendar'. 달력에서 날짜를 고르면 그날 내역만 아래에 보여줌.
+ * ym: 달력용 { y, m }. onSearch: 상세 검색 열기
+ */
+export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [], view = 'list', onView, ym, day, onDay, onSearch }) {
+  const { cards } = useFormData();
   const visible = useMemo(() => {
     let list = items;
+    if (view === 'calendar') list = day ? list.filter((t) => t.date === day) : [];
     if (filter !== 'all') list = list.filter((t) => (t.type === 'income') === (filter === 'income'));
     const q = query.trim().toLowerCase();
     if (q) list = list.filter((t) => (t.memo || '').toLowerCase().includes(q) || (t.category || '').toLowerCase().includes(q)
-      || (findMember(members, t.memberId)?.name || '').toLowerCase().includes(q));
+      || (findMember(members, t.memberId)?.name || '').toLowerCase().includes(q)
+      || (t.tags || []).some((x) => x.toLowerCase().includes(q.replace(/^#/, ''))));
     return [...list].sort((a, b) => (a.date === b.date ? (b.createdAt || 0) - (a.createdAt || 0) : a.date < b.date ? 1 : -1));
-  }, [items, filter, query, members]);
+  }, [items, filter, query, members, view, day]);
 
   const groups = useMemo(() => {
     const m = new Map();
@@ -32,7 +41,16 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
 
   return (
     <section className="card" aria-label="내역">
-      <h2>내역 {visible.length > 0 && <span style={{ fontWeight: 500, fontSize: 12.5 }}>{visible.length}건</span>}</h2>
+      <h2>
+        <span>내역 {visible.length > 0 && <span style={{ fontWeight: 500, fontSize: 12.5 }}>{visible.length}건</span>}</span>
+        {onView && (
+          <span className="seg mini" role="group" aria-label="보기 방식">
+            <button type="button" aria-pressed={view === 'list'} onClick={() => onView('list')}>목록</button>
+            <button type="button" aria-pressed={view === 'calendar'} onClick={() => onView('calendar')}>달력</button>
+          </span>
+        )}
+      </h2>
+      {view === 'calendar' && <CalendarView list={items} ym={ym} selected={day} onPick={onDay} />}
       <div className="toolbar">
         <div className="seg" role="group" aria-label="유형 필터">
           {FILTERS.map(([key, label]) => (
@@ -44,9 +62,12 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
           <SearchIcon />
           <input type="search" placeholder={members.length ? "메모·카테고리·이름 검색" : "메모·카테고리 검색"} value={query} onChange={(e) => onQuery(e.target.value)} />
         </label>
+        {onSearch && <button type="button" className="btn ghost sm" onClick={onSearch} title="기간·금액·태그 등으로 여러 달 검색">상세 검색</button>}
       </div>
 
-      {groups.length === 0 ? (
+      {view === 'calendar' && !day ? (
+        <div className="empty-mini">날짜를 누르면 그날 내역이 보여요.</div>
+      ) : groups.length === 0 ? (
         <div className="empty">
           <div className="big">{items.length ? '🔍' : '🧾'}</div>
           <p>{items.length ? '조건에 맞는 내역이 없어요.' : <>이 달의 내역이 아직 없어요.<br />첫 수입이나 지출을 기록해 보세요.</>}</p>
@@ -85,7 +106,12 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
                         const m = findMember(members, t.memberId);
                         return <span className="who-badge"><span className="dot" style={{ background: memberColor(m) }} />{m ? m.name : '공동'}</span>;
                       })()}
-                      {t.memo || (members.length ? '' : '\u00a0')}
+                      {t.memo || (members.length || t.tags?.length || t.cardId ? '' : '\u00a0')}
+                      {t.cardId && (() => {
+                        const c = cards.find((x) => x.id === t.cardId);
+                        return c ? <span className="card-mark"> · 💳 {c.name}{(t.inst || 1) > 1 ? ` ${t.inst}개월` : ''}</span> : null;
+                      })()}
+                      {(t.tags || []).map((x) => <span key={x} className="tag-mark">#{x}</span>)}
                     </div>
                   </div>
                   <div className={`amt num ${isInc ? 'inc' : ''}`}>{isInc ? '+' : '-'}{won(t.amount)}</div>

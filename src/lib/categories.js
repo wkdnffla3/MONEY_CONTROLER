@@ -20,6 +20,23 @@ const COLOR_VARS = ['--c1', '--c2', '--c3', '--c4', '--c5', '--c6', '--c7', '--c
 export const CategoriesContext = createContext(DEFAULT_CATEGORIES);
 export const useCategories = () => useContext(CategoriesContext);
 
+/**
+ * 입력 폼에서 바로 카테고리를 추가하는 함수 제공.
+ * addCategory(type, name, icon) → 오류 문구(문자열) 또는 null(성공)
+ */
+export const CategoryActionsContext = createContext(null);
+export const useCategoryActions = () => useContext(CategoryActionsContext);
+
+/** 새 카테고리 이름 검사: 오류 문구 또는 null */
+export function checkNewCategory(cats, type, name) {
+  const n = name.trim();
+  if (!n) return '이름을 입력해 주세요.';
+  if (n.length > MAX_CATEGORY_NAME) return `이름은 ${MAX_CATEGORY_NAME}자까지예요.`;
+  if (cats[type].some((c) => c.name === n)) return '같은 이름이 이미 있어요.';
+  if (cats[type].length >= MAX_CATEGORIES) return `카테고리는 ${MAX_CATEGORIES}개까지 만들 수 있어요.`;
+  return null;
+}
+
 /** 아이콘: 목록에 없는 이름(삭제된 카테고리)은 📦 */
 export const iconOf = (cats, type, name) => (cats[type].find((c) => c.name === name) || { icon: '📦' }).icon;
 
