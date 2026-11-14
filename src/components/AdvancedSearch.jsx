@@ -6,7 +6,9 @@ import { buildTxCsv } from '../lib/exportTx';
 import { SHARED, SHARED_LABEL, colorVar, findMember, memberColor } from '../lib/members';
 import { formatAmountInput, pad, parseAmount, todayStr, won } from '../lib/format';
 
-export const EMPTY_FILTERS = { period: '3m', from: '', to: '', type: 'all', categories: [], who: 'all', tags: [], card: 'all', min: '', max: '', q: '' };
+import { EMPTY_FILTERS } from '../lib/searchFilters';
+
+export { EMPTY_FILTERS };
 
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 function periodRange(period, from, to) {

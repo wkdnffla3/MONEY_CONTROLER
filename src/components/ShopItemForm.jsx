@@ -5,6 +5,7 @@ import { normalizeName } from '../lib/analysis';
 import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 import { MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
+import MemoLinks from './MemoLinks';
 import { MAX_ITEM_NAME, MAX_QTY } from '../lib/shopping';
 
 /** 장보기 물품 추가·수정. onSubmit(data), onDelete() */
@@ -124,6 +125,7 @@ export default function ShopItemForm({ initial, prefill, members = [], defaultMe
       <div className="field">
         <label htmlFor="si-memo">메모</label>
         <input id="si-memo" maxLength={MAX_MEMO} placeholder="예: 1+1 행사, 저지방" value={memo} onChange={(e) => setMemo(e.target.value)} />
+        <MemoLinks text={memo} />
       </div>
       <div className="err" aria-live="polite">{error}</div>
       <div className="form-actions">

@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/outbox.test.mjs && node tests/features.test.mjs && node tests/analysis.test.mjs && node tests/notify.test.mjs"
+    "test": "node --test \"tests/unit/*.test.mjs\"",
+    "test:edge": "node tests/edge/push-notify.test.mjs",
+    "test:sql": "node tests/sql/run.mjs",
+    "test:e2e": "node tests/e2e/build.mjs && node --test --test-concurrency=2 \"tests/e2e/*.e2e.test.mjs\"",
+    "test:e2e:setup": "playwright install --with-deps chromium",
+    "test:all": "npm test && npm run test:edge && npm run test:e2e && npm run test:sql"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",
@@ -16,6 +21,8 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.0",
+    "esbuild": "^0.25.0",
+    "playwright": "^1.56.0",
     "vite": "^7.0.0"
   }
 }

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { createECDH, createSign, createPublicKey, createVerify } from 'node:crypto';
 import {
   buildNotification, inQuietHours, normalizePrefs, shouldSend, whoText, DEFAULT_PREFS,
-} from '../supabase/functions/_shared/notifyMessage.js';
-import { generateVapidKeys } from '../scripts/gen-vapid.mjs';
+} from '../../supabase/functions/_shared/notifyMessage.js';
+import { generateVapidKeys } from '../../scripts/gen-vapid.mjs';
 
 const members = [{ id: 'm1', name: '민지', color: 0 }, { id: 'm2', name: '준호', color: 1 }];
 const tx = (o) => ({ id: 'abc', user_id: 'u', type: 'expense', amount: 12000, category: '식비', memo: '점심', member_id: 'm1', ...o });
@@ -99,7 +99,7 @@ for (let i = 0; i < 30; i += 1) {
 
 // 10. 리포트 기간 (서울 기준)
 {
-  const { reportRange, buildReport } = await import('../supabase/functions/_shared/notifyMessage.js');
+  const { reportRange, buildReport } = await import('../../supabase/functions/_shared/notifyMessage.js');
   // 2026-11-16(월) 오전 9시 KST = 00:00 UTC
   const mon = new Date(Date.UTC(2026, 10, 16, 0, 0));
   assert.deepEqual(reportRange('week', mon), { cur: { start: '2026-11-09', end: '2026-11-15' }, prev: { start: '2026-11-02', end: '2026-11-08' } });

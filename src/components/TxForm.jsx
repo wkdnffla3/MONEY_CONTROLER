@@ -8,6 +8,7 @@ import { INSTALLMENT_OPTIONS } from '../lib/cards';
 import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount } from '../lib/format';
 import { MAX_MEMO } from '../lib/outbox';
+import MemoLinks from './MemoLinks';
 
 const QUICK = [1000, 5000, 10000, 50000];
 const quickLabel = (v) => (v >= 10000 ? `+${v / 10000}만` : `+${v / 1000}천`);
@@ -180,6 +181,7 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
         <div className="field">
           <label htmlFor={`${uid}-memo`}>메모</label>
           <input id={`${uid}-memo`} maxLength={MAX_MEMO} placeholder="예: 점심, 편의점, 링크" value={memo} onChange={(e) => setMemo(e.target.value)} />
+          <MemoLinks text={memo} />
         </div>
       </div>
 
