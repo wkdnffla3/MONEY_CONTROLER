@@ -4,7 +4,7 @@
  * - Supabase 등 다른 도메인 요청과 GET 이외 요청은 건드리지 않음 → 내역 데이터는 캐시하지 않음
  * 캐시 구조를 바꿀 때만 VERSION 을 올리세요.
  */
-const VERSION = 'v1';
+const VERSION = 'v1'; // 알림 코드를 추가해도 캐시 구조는 같아서 그대로
 const SHELL_CACHE = `ledger-shell-${VERSION}`;
 const ASSET_CACHE = `ledger-assets-${VERSION}`;
 const SHELL_URLS = ['/', '/manifest.webmanifest', '/icons/icon-192.png', '/icons/icon-512.png'];
@@ -72,4 +72,42 @@ self.addEventListener('fetch', (event) => {
       })),
     );
   }
+});
+
+// ===== 웹 푸시 (supabase/functions/push-notify 가 보냄) =====
+// 앱 화면을 보고 있으면 앱 안 배너가 이미 알려주므로 시스템 알림은 생략
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch { data = { title: '가계부', body: event.data ? event.data.text() : '' }; }
+  const title = String(data.title || '가계부').slice(0, 80);
+  const url = typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      if (list.some((c) => c.visibilityState === 'visible' && c.focused)) return undefined;
+      return self.registration.showNotification(title, {
+        body: String(data.body || '').slice(0, 160),
+        tag: typeof data.tag === 'string' ? data.tag.slice(0, 80) : undefined,
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
+        data: { url },
+      });
+    }),
+  );
+});
+
+// 알림을 누르면: 열린 앱 창이 있으면 그 창으로, 없으면 새로 열기
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const raw = event.notification.data && event.notification.data.url;
+  const url = typeof raw === 'string' && raw.startsWith('/') ? raw : '/';
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      const win = list.find((c) => new URL(c.url).origin === self.location.origin);
+      if (win) {
+        win.postMessage({ type: 'navigate', url });
+        return win.focus();
+      }
+      return self.clients.openWindow(url);
+    }),
+  );
 });
