@@ -15,25 +15,27 @@ const MAX_AMOUNT = 9_999_999_999;
 /**
  * 내역 입력/수정 폼.
  * initial 이 있으면 수정 모드(삭제 버튼 표시), 없으면 새 내역.
+ * prefill 은 새 내역의 처음 값 (즐겨찾기에서 열 때). 날짜는 defaultDate.
  * onSubmit(data) 는 Promise 를 돌려줘야 함 — 성공하면 새 내역 모드에서 입력값을 비움.
  */
-export default function TxForm({ initial, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null }) {
+export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null }) {
+  const seed = initial || prefill || null;
   const uid = useId();
   const amountRef = useRef(null);
-  const [type, setType] = useState(initial?.type || 'expense');
-  const [amount, setAmount] = useState(initial ? formatAmountInput(initial.amount) : '');
+  const [type, setType] = useState(seed?.type || 'expense');
+  const [amount, setAmount] = useState(seed?.amount ? formatAmountInput(seed.amount) : '');
   const CATS = useCategories();
-  const [category, setCategory] = useState(initial?.category || CATS.expense[0].name);
+  const [category, setCategory] = useState(seed?.category || CATS[seed?.type || 'expense'][0].name);
   const [date, setDate] = useState(initial?.date || defaultDate);
-  const [memo, setMemo] = useState(initial?.memo || '');
+  const [memo, setMemo] = useState(seed?.memo || '');
   const { cards, tags: tagSuggestions } = useFormData();
-  const [tags, setTags] = useState(initial?.tags || []);
+  const [tags, setTags] = useState(seed?.tags || []);
   // 결제수단: null = 현금·체크카드 등, 카드 id = 신용카드 (삭제된 카드면 현금으로 보임)
-  const [cardId, setCardId] = useState(initial?.cardId && cards.some((c) => c.id === initial.cardId) ? initial.cardId : null);
+  const [cardId, setCardId] = useState(seed?.cardId && cards.some((c) => c.id === seed.cardId) ? seed.cardId : null);
   const [inst, setInst] = useState(initial?.inst || 1);
   // 누가: 등록된 사람 id 또는 null(공동). 삭제된 사람이 지정돼 있던 내역은 공동으로 보임
   const validId = (id) => (id && members.some((m) => m.id === id) ? id : null);
-  const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(defaultMemberId)));
+  const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(prefill?.memberId ?? defaultMemberId)));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false); // 저장 버튼 연타로 같은 내역이 두 번 만들어지는 것 방지

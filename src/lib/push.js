@@ -46,7 +46,7 @@ export async function getPushState() {
 }
 
 /** 웹 푸시 켜기: 권한 요청 → 구독 → 서버에 이 기기 등록 */
-export async function enablePush(prefs) {
+export async function enablePush(prefs, ledgerId) {
   if (!supabase) throw new Error('Supabase 설정이 없어요');
   const perm = await Notification.requestPermission();
   if (perm !== 'granted') throw new Error(perm === 'denied' ? '브라우저에서 알림이 차단돼 있어요' : '알림 권한을 허용해 주세요');
@@ -62,6 +62,7 @@ export async function enablePush(prefs) {
     // 이 기기의 예전 줄 정리 후 등록
     await supabase.from('push_subscriptions').delete().eq('device_id', deviceId);
     const { error } = await supabase.from('push_subscriptions').upsert({
+      ...(ledgerId ? { user_id: ledgerId } : {}), // 알림 받을 가계부 (공유 가계부 참여 중이면 그 가계부)
       device_id: deviceId,
       endpoint: json.endpoint,
       p256dh: json.keys?.p256dh,
