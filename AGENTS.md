@@ -38,7 +38,7 @@ src/
   lib/*.js               기능별 순수 함수 (recurring, shopping, cards, analysis, subscriptions, activity, household, push, device …)
   components/*.jsx       화면 조각
 public/sw.js             서비스워커: 화면 network-first, 빌드 파일 cache-first, push / notificationclick 처리
-supabase/schema.sql      새 프로젝트용 전체 스키마 (002~010 내용 포함)
+supabase/schema.sql      새 프로젝트용 전체 스키마 (002~011 내용 포함)
 supabase/00N_*.sql       기존 DB용 업데이트 (번호 순서대로, 여러 번 실행해도 안전하게 작성)
 supabase/functions/push-notify/index.ts   웹 푸시 발송 Edge Function (Deno)
 supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과 함수가 같은 파일을 import
@@ -50,7 +50,9 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 - 모든 저장은 먼저 기기의 "보낼 목록"(localStorage `ledger.outbox.<가계부ID>`)에 들어가고 화면에 바로 보인 뒤, 온라인이면 즉시·아니면 연결되는 순간 순서대로 전송한다.
 - **ID는 클라이언트가 만든다** → 같은 작업을 여러 번 보내도 upsert라 서버에 한 줄만 남는다.
 - 고정 ID 규칙: 반복 내역 `rec-<규칙ID>-<YYYY-MM>`, 장보기 결제 `shop-<구매ID>` 또는 `shop-<물품ID>`. 이 접두어는 알림·변경 기록·구독 발견에서 구분하는 데도 쓰인다.
-- 같은 대상에 대한 작업은 목록에서 합쳐진다(`coalesce`). 탭이 여러 개면 `navigator.locks`로 한 탭만 전송한다.
+- 같은 대상에 대한 작업은 목록에서 합쳐진다(`coalesce`). 단 카테고리 이름 변경(`renameCat`)은 순서대로 모두 실행돼야 해서 합치지 않는다.
+- 카테고리 이름 변경은 내역마다 보내지 않고 `renameCat` 작업 하나 → 서버 `update ... where user_id·type·category` 한 번. 아직 못 보낸 내역 저장도 새 이름으로 고쳐 둔다.
+- 실시간 변경이 한꺼번에 와도 다시 불러오기는 400ms 모아서 한 번만 한다. 탭이 여러 개면 `navigator.locks`로 한 탭만 전송한다.
 - 일시적 오류(네트워크, 타임아웃 10초, 권한 오류 42501)는 3/10/30/60초 간격으로 재시도하고, 영구 오류만 목록에서 빼고 알린다.
 - 기기 저장소에서 읽는 값은 손상·조작될 수 있으므로 항상 `isValid*`로 검사한다.
 
@@ -69,6 +71,8 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 
 | 기능 | 결정 |
 |---|---|
+| 화면 구성 | 탭 4개: 가계부(요약·차트·즐겨찾기, **내역 목록 없음**) / 내역(`#list`, 목록·달력, 검색) / 장보기(`#shopping`) / 리포트(`#report`). 새 내역·댓글 알림을 누르면 내역 탭으로 |
+| 메모 길이 | 내역·장보기·반복·즐겨찾기 메모 **최대 200자**(`MAX_MEMO`, 링크 저장용). DB는 011부터. 011 전 DB에 100자 넘는 메모를 보내면 버리지 않고 보관 + 011 안내(`isMemoLimitError`) |
 | 함께 쓰는 사람(members) | 계정 하나를 여러 명이 쓸 때의 "누가" 목록. 공유 가계부에서도 그대로 씀. 기기마다 "나는 누구"를 저장(`getMe`), 참여할 때 고른 사람은 서버에도 저장 |
 | 가계부 공유 (008) | 각자 계정으로 같은 가계부. **공유 가계부 하나만** 보임(참여 중엔 내 원래 데이터 숨김, 나가면 다시 보임). **참여자 모두 같은 권한**(초대·내보내기 가능), 만든 사람만 내보낼 수 없음. 초대 코드 10자리, 48시간, 1회용. 한 가계부 최대 10명. 보낼 목록이 남아 있으면 참여·나가기 불가 |
 | 반복 내역 | 그 달에 처음 연 기기가 생성. 등록 후 규칙의 `last`를 올려 지워도 다시 안 생김 |
@@ -96,6 +100,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 008_sharing_favorites | 공유(참여자·초대·RLS 변경·함수), `favorites`, 푸시 구독 `account_id` | 007 |
 | 009_report_schedule | 리포트 예약 (선택, 프로젝트ID·비밀 값을 채워서 실행) | 008, 함수 배포 |
 | 010_history_comments | `activity_log` 트리거, `tx_comments`, `dismissed_subs` | 008 |
+| 011_memo_200 | 메모 200자, 반복·즐겨찾기 설정 크기 한도 상향 (예전 설치마다 다른 제약 이름을 정의로 찾아 교체) | 008 |
 
 규칙: 새 파일은 **여러 번 실행해도 안전하게**(`if not exists`, `drop … if exists` 후 생성), 끝에 `notify pgrst, 'reload schema';`, 같은 내용을 `schema.sql` 끝에도 붙인다.
 

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
 import { SHARED_LABEL, findMember, memberColor } from '../lib/members';
-import { newId, MAX_AMOUNT } from '../lib/outbox';
+import { newId, MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
 import { nextDate, occurrenceDate, ymOf } from '../lib/recurring';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 
@@ -111,7 +111,7 @@ function RuleForm({ rule, members, onCancel, onDone }) {
       type,
       amount: n,
       category: activeCat,
-      memo: memo.trim().slice(0, 100),
+      memo: memo.trim().slice(0, MAX_MEMO),
       memberId,
       day: Number(day),
       start,
@@ -138,7 +138,7 @@ function RuleForm({ rule, members, onCancel, onDone }) {
       </div>
       <div className="field">
         <label htmlFor="rr-memo">이름</label>
-        <input id="rr-memo" maxLength={60} placeholder="예: 월세, 넷플릭스, 월급" value={memo} onChange={(e) => setMemo(e.target.value)} />
+        <input id="rr-memo" maxLength={MAX_MEMO} placeholder="예: 월세, 넷플릭스, 월급" value={memo} onChange={(e) => setMemo(e.target.value)} />
       </div>
       <div className="field">
         <label>카테고리</label>

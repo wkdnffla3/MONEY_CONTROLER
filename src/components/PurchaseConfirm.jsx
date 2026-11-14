@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
 import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount, todayStr, won } from '../lib/format';
-import { MAX_AMOUNT } from '../lib/outbox';
+import { MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
 import { defaultMemo, expectedTotal } from '../lib/shopping';
 
 /**
@@ -95,7 +95,7 @@ export default function PurchaseConfirm({ items, members = [], defaultMemberId =
           </div>
           <div className="field">
             <label htmlFor="pc-memo">메모</label>
-            <input id="pc-memo" maxLength={100} value={memo} onChange={(e) => setMemo(e.target.value)} />
+            <input id="pc-memo" maxLength={MAX_MEMO} value={memo} onChange={(e) => setMemo(e.target.value)} />
           </div>
         </>
       )}
