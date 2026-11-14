@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
-import { MAX_AMOUNT, MAX_FAVORITES, newId } from '../lib/outbox';
+import { MAX_AMOUNT, MAX_FAVORITES, MAX_MEMO, newId } from '../lib/outbox';
 import { memberColor, SHARED_LABEL } from '../lib/members';
 
 const empty = (cats) => ({ label: '', type: 'expense', amount: 0, category: cats.expense[0].name, memo: '', memberId: null });
@@ -22,7 +22,7 @@ function FavoriteForm({ initial, members, onSubmit, onCancel, onDelete }) {
     if (n > MAX_AMOUNT) { setErr('금액이 너무 커요.'); return; }
     onSubmit({
       id: initial?.id || newId().slice(0, 40), label: label.slice(0, 16), type: f.type, amount: n, category: f.category,
-      memo: f.memo.trim().slice(0, 100), memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : null,
+      memo: f.memo.trim().slice(0, MAX_MEMO), memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : null,
       cardId: initial?.cardId ?? null, tags: initial?.tags ?? [],
     });
   };
@@ -72,7 +72,7 @@ function FavoriteForm({ initial, members, onSubmit, onCancel, onDelete }) {
       )}
       <div className="field">
         <label htmlFor="fav-memo">메모</label>
-        <input id="fav-memo" maxLength={100} value={f.memo} onChange={(e) => setF({ ...f, memo: e.target.value })} />
+        <input id="fav-memo" maxLength={MAX_MEMO} value={f.memo} onChange={(e) => setF({ ...f, memo: e.target.value })} />
       </div>
       <div className="err" aria-live="polite">{err}</div>
       <div className="form-actions">

@@ -241,6 +241,12 @@ npm run dev                  # http://localhost:5173
 3. `supabase/009_report_schedule.sql`을 열어 ① 프로젝트ID, ② 웹훅 비밀 값(`WEBHOOK_SECRET`과 같은 값) 두 곳을 바꾼 뒤 SQL Editor에서 실행해요. 값은 Vault(암호화 저장소)에 보관돼요.
 4. 바로 시험해 보기: SQL Editor에서 `select public.send_report_push('week');` → 지난주에 내역이 있으면 몇 초 안에 푸시가 와요. 결과는 Edge Functions → push-notify → Logs에서 `ledgers / sent` 숫자로 볼 수 있어요.
 
+## 화면 구성 · 메모 200자 (011)
+
+- **탭 4개:** 가계부(요약·차트·예산·즐겨찾기) / **내역**(목록·달력, 검색) / 장보기 / 리포트. 휴대폰에서 첫 화면이 짧아지도록 내역 목록은 "내역" 탭으로 옮겼어요. 주소 `#list`로 바로 열 수 있고, 홈 화면 바로가기에도 "내역 보기"가 있어요.
+- **메모 최대 200자:** 링크도 넣을 수 있어요. SQL Editor에서 `supabase/011_memo_200.sql`을 실행해 주세요. 실행 전에 100자가 넘는 메모를 저장하면 그 내역만 기기에 보관됐다가, 실행 후 자동으로 올라가요.
+- **카테고리 이름 변경이 빨라졌어요:** 내역이 수백 건이어도 서버 요청은 1번이에요(오프라인에서도 작업 1개만 보관).
+
 ## 변경 기록 · 내역 댓글 · 구독 자동 발견
 
 **처음 한 번:** SQL Editor에서 `supabase/010_history_comments.sql` 실행 (008 다음).

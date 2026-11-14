@@ -6,6 +6,7 @@
  *       마지막이 이번 달이나 지난달 (아직 계속되는 것), 이미 반복 내역이 있거나 "무시"한 건 제외
  */
 import { ymOf } from './recurring.js';
+import { MAX_MEMO } from './outbox.js';
 
 export const MIN_MONTHS = 3;
 const normMemo = (s) => String(s || '').toLowerCase().replace(/\s+/g, '').replace(/[()[\]·.,_-]/g, '');
@@ -66,7 +67,7 @@ export function detectSubscriptions(allTx, recurring = [], dismissed = [], today
 export function ruleFromSuggestion(s, id, today = new Date()) {
   const ym = ymOf(today);
   return {
-    id, type: s.type, amount: s.amount, category: s.category, memo: s.memo.slice(0, 100), memberId: s.memberId ?? null,
+    id, type: s.type, amount: s.amount, category: s.category, memo: s.memo.slice(0, MAX_MEMO), memberId: s.memberId ?? null,
     day: Math.min(31, Math.max(1, s.day)), start: ym, end: null, last: ym, active: true,
   };
 }

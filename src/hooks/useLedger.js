@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRemember, supabase } from '../lib/supabase';
 import {
-  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isRetryable, isSchemaError, newId, queueStorageKey, readCache,
+  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isMemoLimitError, isRetryable, isSchemaError, newId, queueStorageKey, readCache,
   readQueue, removeOp, sameTarget, sanitizeSetting, writeCache, writeQueue,
 } from '../lib/outbox';
 import { planRecurring, ymOf } from '../lib/recurring';
@@ -126,6 +126,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   const onForbiddenRef = useRef(onForbidden);
   onForbiddenRef.current = onForbidden;
   const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
+  const memoBlockedRef = useRef(false); // 긴 메모가 예전 DB 제한에 걸려 보관 중인지 (011 안내)
   const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
   const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트 필요
   const [schemaNeed, setSchemaNeed] = useState(null);           // 먼저 실행할 업데이트 파일 번호
@@ -228,6 +229,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       ['', '010', '008', '006', '004', '003'][setLevel] || null,
       noItemsTable ? '005' : null,
       noDeviceCol ? '007' : null,
+      memoBlockedRef.current ? '011' : null,
     ].filter(Boolean).sort()[0] || null;
     if (noDeviceCol) deviceColRef.current = false;
     setSchemaNeed(need);
@@ -256,6 +258,10 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       else if (op.kind === 'delete') req = supabase.from('transactions').delete().eq('id', op.id);
       else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data, deviceColRef.current && getDeviceId()));
       else if (op.kind === 'itemDel') req = supabase.from('shopping_items').delete().eq('id', op.id);
+      // 카테고리 이름 변경: 이 가계부에서 그 이름을 쓰는 내역을 서버가 한 번에 바꿈 (요청 1번, 다른 칸은 그대로)
+      // 다시 보내도 이미 바뀐 뒤라 아무 일도 없어서 안전
+      else if (op.kind === 'renameCat') req = supabase.from('transactions').update({ category: op.to })
+        .eq('user_id', userId).eq('type', op.type).eq('category', op.from);
       else if (SETTINGS[op.kind]) req = supabase.from('settings').upsert({ user_id: userId, [SETTINGS[op.kind].column]: op.value });
       else return { error: null };
       // 응답이 끝없이 안 오면(불안정한 와이파이 등) 전송 전체가 멈추지 않도록 제한 시간을 둠
@@ -289,6 +295,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       // DB 업데이트 전이라 지금은 못 보내는 작업(사람 지정 내역, 사람 목록)은 건너뛰고 나머지를 계속 보냄.
       // 서로 다른 대상끼리는 순서가 상관없고, 같은 대상은 목록에 하나만 있으므로 건너뛰어도 안전.
       const skipped = new Set();
+      memoBlockedRef.current = false; // 이번 시도에서 다시 걸리면 다시 켜짐
       for (;;) {
         const op = getQ().find((o) => !skipped.has(o.opId));
         if (!op) break;
@@ -296,6 +303,14 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
         if (e) {
           // device_id 칸만 없는 거면(007 전) 그 칸을 빼고 바로 다시 보냄 — 알림만 덜 정확해질 뿐 저장엔 문제없음
           if (isDeviceColError(e) && deviceColRef.current) { deviceColRef.current = false; continue; }
+          // 메모가 길어서 예전 DB 제한(100자)에 걸림 → 버리지 않고 보관, 011 실행 안내
+          if (isMemoLimitError(e)) {
+            memoBlockedRef.current = true;
+            setSchemaNeed((n) => (!n || n > '011' ? '011' : n));
+            setSchemaOutdated(true);
+            skipped.add(op.opId);
+            continue;
+          }
           if (isSchemaError(e)) {
             setSchemaOutdated(true);
             // 내역 저장이 member_id 때문에 실패했다면 예전 형식으로 한 번 더 (사람 없는 내역은 이걸로 저장됨)
@@ -390,15 +405,18 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
 
     const filter = `user_id=eq.${userId}`;
     // 변경이 오면 새로 불러오고, 다른 기기에서 추가한 거면 알림으로 넘김
+    // 변경이 한꺼번에 많이 와도(예: 카테고리 이름 변경으로 수백 줄) 다시 불러오기는 한 번만
+    let reloadTimer = null;
+    const scheduleLoad = () => { clearTimeout(reloadTimer); reloadTimer = setTimeout(load, 400); };
     const onChange = (table) => (payload) => {
-      load();
+      scheduleLoad();
       const n = remoteInsert(table, payload);
       if (n) { try { onRemoteRef.current?.(n); } catch { /* 알림 실패가 동기화를 막지 않게 */ } }
     };
     const channel = supabase
       .channel(`ledger-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter }, onChange('transactions'))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter }, scheduleLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, onChange('shopping_items'))
       .subscribe();
 
@@ -425,6 +443,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       clearTimeout(lockTimer.current);
       clearInterval(dayTimer);
       supabase.removeChannel(channel);
+      clearTimeout(reloadTimer);
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('storage', onStorage);
     };
@@ -494,24 +513,29 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
 
   /**
    * 카테고리 목록 저장. renames = [{ type, from, to }] 이면 그 카테고리의 기존 내역·반복 규칙·카테고리별 예산도 함께 바꿈.
-   * 내역은 ID별로 upsert라 여러 번 보내져도 중복되지 않음.
+   * 내역은 건마다 보내지 않고 이름 변경 작업 하나(renameCat)로 보내서, 내역이 수백 건이어도 요청은 1번.
    */
   const saveCategories = useCallback((categories, renames = []) => {
     const v = viewRef.current;
     const ops = [{ opId: newId(), kind: 'categories', value: categories }];
     if (renames.length) {
       const map = (type, name) => renames.find((r) => r.type === type && r.from === name)?.to ?? name;
-      for (const [id, t] of Object.entries(v.tx)) {
-        const to = map(t.type, t.category);
-        if (to !== t.category) ops.push({ opId: newId(), kind: 'upsert', id, data: { ...t, category: to } });
+      for (const r of renames) {
+        if (r.from !== r.to) ops.push({ opId: newId(), kind: 'renameCat', type: r.type, from: r.from, to: r.to });
       }
+      // 아직 못 보낸 내역 저장도 새 이름으로 고쳐 둠 (먼저 못 보내고 나중에 올라가도 옛 이름으로 되돌리지 않게)
+      setQ(getQ().map((o) => {
+        if (o.kind !== 'upsert') return o;
+        const to = map(o.data.type, o.data.category);
+        return to === o.data.category ? o : { ...o, data: { ...o.data, category: to } };
+      }));
       const rec = v.recurring.map((r) => ({ ...r, category: map(r.type, r.category) }));
       if (rec.some((r, i) => r.category !== v.recurring[i].category)) ops.push({ opId: newId(), kind: 'recurring', value: rec });
       const cb = Object.fromEntries(Object.entries(v.catBudgets).map(([k, amt]) => [map('expense', k), amt]));
       if (Object.keys(cb).join() !== Object.keys(v.catBudgets).join()) ops.push({ opId: newId(), kind: 'catBudgets', value: cb });
     }
     return enqueueMany(ops);
-  }, [enqueueMany]);
+  }, [enqueueMany, getQ, setQ]);
 
   // ---- 장보기 ----
   const saveItem = useCallback((id, data) => enqueue({ opId: newId(), kind: 'item', id, data }), [enqueue]);
