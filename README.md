@@ -12,6 +12,8 @@ ledger-react/
 ├─ supabase/schema.sql     # DB 테이블 + RLS 보안 규칙 (00x_*.sql = 기존 DB용 업데이트)
 ├─ supabase/functions/     # push-notify(웹 푸시 발송), _shared/notifyMessage.js(알림 문구)
 ├─ scripts/gen-vapid.mjs   # 웹 푸시 키 만들기
+├─ tests/                  # 단위·Edge Function·브라우저·SQL 테스트 (tests/README.md)
+├─ .github/workflows/      # push·PR마다 테스트 자동 실행
 └─ src/
    ├─ main.jsx             # 시작점
    ├─ App.jsx              # 화면 조립, 상태(선택한 달·필터·열린 시트)
@@ -148,7 +150,7 @@ npm run dev                  # http://localhost:5173
 | `src/lib/csv.js` | CSV 만들기(이스케이프·수식 주입 방지)·내려받기 |
 | `src/lib/categories.js` | 기본/사용자 카테고리, 아이콘·색 |
 | `src/components/RecurringManager.jsx` · `CategoryEditor.jsx` · `CategoryBudget.jsx` · `MonthlyTrend.jsx` · `ExportForm.jsx` · `SettingsMenu.jsx` | 각 화면 |
-| `tests/features.test.mjs` | 반복 내역·CSV·검증 단위 테스트 (`npm test`) |
+| `tests/unit/features.test.mjs` | 반복 내역·CSV·검증 단위 테스트 (`npm test`) |
 
 ## 장보기 목록
 
@@ -195,8 +197,8 @@ npm run dev                  # http://localhost:5173
 | `src/lib/analysis.js` | 지난달 대비, 연간 리포트, 검색, 달력, 지난 구매가 |
 | `src/lib/exportTx.js` | 내보내기·검색 결과 공통 CSV |
 | `src/components/CalendarView.jsx` · `AdvancedSearch.jsx` · `ReportPage.jsx` · `MonthCompare.jsx` · `CardBills.jsx` · `CardManager.jsx` · `TagInput.jsx` | 화면 |
-| `tests/analysis.test.mjs` | 위 계산 단위 테스트 (`npm test`) |
-| `tests/notify.test.mjs` | 알림 문구·방해 금지 시간·VAPID 키·리포트 기간과 문구 단위 테스트 |
+| `tests/unit/analysis.test.mjs` | 위 계산 단위 테스트 (`npm test`) |
+| `tests/unit/notify.test.mjs` | 알림 문구·방해 금지 시간·VAPID 키·리포트 기간과 문구 단위 테스트 |
 
 ## 가계부 공유 (각자 계정으로 같은 가계부)
 
@@ -245,6 +247,8 @@ npm run dev                  # http://localhost:5173
 
 - **탭 4개:** 가계부(요약·차트·예산·즐겨찾기) / **내역**(목록·달력, 검색) / 장보기 / 리포트. 휴대폰에서 첫 화면이 짧아지도록 내역 목록은 "내역" 탭으로 옮겼어요. 주소 `#list`로 바로 열 수 있고, 홈 화면 바로가기에도 "내역 보기"가 있어요.
 - **메모 최대 200자:** 링크도 넣을 수 있어요. SQL Editor에서 `supabase/011_memo_200.sql`을 실행해 주세요. 실행 전에 100자가 넘는 메모를 저장하면 그 내역만 기기에 보관됐다가, 실행 후 자동으로 올라가요.
+- **메모 속 링크:** 내역·장보기 수정 화면에서 메모의 링크를 누르면 새 탭으로 열려요. 목록에는 🔗가 표시돼요.
+- **첫 화면이 가벼워졌어요:** 자주 안 쓰는 화면은 필요할 때 불러오고(첫 설치 때 미리 받아 두어 오프라인에서도 열림), 글꼴이 첫 화면을 막지 않아요.
 - **카테고리 이름 변경이 빨라졌어요:** 내역이 수백 건이어도 서버 요청은 1번이에요(오프라인에서도 작업 1개만 보관).
 
 ## 변경 기록 · 내역 댓글 · 구독 자동 발견
@@ -334,6 +338,15 @@ supabase functions deploy push-notify --no-verify-jwt
 - 켰는데 알림이 안 오면 → 대시보드 Edge Functions → push-notify → Logs. `401`이면 웹훅 헤더 값, `VAPID keys not set`이면 4단계 secrets 확인. 응답의 `sent / skipped / removed` 로 몇 기기에 보냈는지 보여요.
 - 같은 기기에서 입력한 건 원래 안 와요. 다른 휴대폰이나 다른 브라우저로 시험해 보세요.
 - 푸시는 Supabase 무료 요금제의 Edge Function 호출 한도 안에서 충분히 쓸 수 있는 양이에요 (입력 1건당 호출 1번).
+
+## 테스트
+
+```bash
+npm test               # 단위 테스트
+npm run test:all       # 단위 + Edge Function + 브라우저 + SQL (준비: tests/README.md)
+```
+
+실제 Supabase 없이 가짜 Supabase(브라우저)와 로컬 Postgres(SQL)로 돌아가요. GitHub에 push하면 Actions가 자동으로 실행해요. 자세한 방법은 `tests/README.md`.
 
 ## DB 값 제한
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { CloseIcon } from './Icons';
+import ScreenBoundary from './ScreenBoundary';
 
 /** 모바일에서는 아래에서 올라오는 시트, 태블릿 이상에서는 가운데 모달 */
 export default function Sheet({ title, onClose, children }) {
@@ -31,7 +32,7 @@ export default function Sheet({ title, onClose, children }) {
           <span>{title}</span>
           <button type="button" className="iconbtn" onClick={onClose} aria-label="닫기"><CloseIcon /></button>
         </h3>
-        {children}
+        <ScreenBoundary>{children}</ScreenBoundary>
       </div>
     </div>
   );

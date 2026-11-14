@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { coalesce, applyQueue, removeOp, isRetryable, isValidOp, isValidTx, isValidMembers, isSchemaError } from '../src/lib/outbox.js';
-import { summarizeByMember, filterByOwner, sharePercents, SHARED } from '../src/lib/members.js';
+import { coalesce, applyQueue, removeOp, isRetryable, isValidOp, isValidTx, isValidMembers, isSchemaError } from '../../src/lib/outbox.js';
+import { summarizeByMember, filterByOwner, sharePercents, SHARED } from '../../src/lib/members.js';
 let q = [];
 const up = (id, memo, opId) => ({ opId, kind: 'upsert', id, data: { memo } });
 q = coalesce(q, up('a', 'v1', 1));
