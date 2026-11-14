@@ -17,11 +17,16 @@ const fromRow = (r) => ({
   memo: r.memo || '',
   date: r.date,
   memberId: r.member_id ?? null,
+  tags: Array.isArray(r.tags) ? r.tags : [],
+  cardId: r.card_id ?? null,
+  inst: Number(r.inst_months) || 1,
   createdAt: Number(r.created_at) || 0,
 });
 
-// legacy=true: DB 업데이트(003) 전이라 member_id 칸이 없을 때. 사람이 지정된 내역은 업데이트 후에 보냄
-const toRow = (id, userId, t, legacy) => {
+// level: 0 = 최신(006까지), 1 = 006 전(태그·카드 칸 없음), 2 = 003 전(member_id 칸도 없음).
+// 없는 칸은 기본값일 때만 빼고 보냄 → 값이 있는 내역은 실패해서 보관됐다가 DB 업데이트 후 올라감
+const hasExtra = (t) => (t.tags && t.tags.length > 0) || !!t.cardId || (t.inst || 1) > 1;
+const toRow = (id, userId, t, level) => {
   const row = {
     id,
     user_id: userId,
@@ -32,11 +37,18 @@ const toRow = (id, userId, t, legacy) => {
     date: t.date,
     created_at: t.createdAt,
   };
-  if (!legacy || t.memberId) row.member_id = t.memberId ?? null;
+  if (level <= 1 || t.memberId) row.member_id = t.memberId ?? null;
+  if (level === 0 || hasExtra(t)) {
+    row.tags = t.tags || [];
+    row.card_id = t.cardId ?? null;
+    row.inst_months = t.inst || 1;
+  }
   return row;
 };
 
 const TX_COLS = 'id,type,amount,category,memo,date,created_at';
+// 내역 칸 묶음: DB 단계별로 최신부터 시도
+const TX_COL_SETS = [`${TX_COLS},member_id,tags,card_id,inst_months`, `${TX_COLS},member_id`, TX_COLS];
 const ITEM_COLS = 'id,name,qty,price,category,member_id,memo,checked,status,paid,tx_id,bought_at,created_at';
 
 const fromItemRow = (r) => ({
@@ -60,6 +72,7 @@ const toItemRow = (id, userId, i) => ({
 });
 // 설정 칸: DB 업데이트 단계별로 있는 칸이 다름. 최신부터 시도해서 되는 것으로 불러옴
 const SETTINGS_COL_SETS = [
+  ['budget', 'members', 'recurring', 'categories', 'cat_budgets', 'cards'], // 006 적용
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets'], // 004 적용
   ['budget', 'members'],                                           // 003 적용
   ['budget'],                                                      // 처음 스키마
@@ -100,7 +113,7 @@ export function useLedger(userId) {
   const memQueue = useRef([]);         // 메모리에 둔 보낼 목록 (기기 저장이 실패해도 이 탭에서는 유지)
   const storageBroken = useRef(false); // 기기 저장소에 쓰기 실패한 적이 있으면 메모리 목록을 기준으로 함
   const serverRef = useRef(EMPTY_STATE);
-  const legacyRef = useRef(false); // DB에 transactions.member_id 칸이 없음 (003 전)
+  const legacyRef = useRef(0); // 내역 칸 단계: 0 최신, 1 006 전, 2 003 전 (toRow 참고)
   const lockTimer = useRef(null);
   const flushPromise = useRef(null);
   const retryTimer = useRef(null);
@@ -139,14 +152,16 @@ export function useLedger(userId) {
     const seq = ++loadSeq.current;
     const startedAt = Date.now();
     setStatus((s) => (s === 'ok' ? 'ok' : 'loading'));
-    let txRes, stRes, itRes, txLegacy = false, setLevel = 0, noItemsTable = false;
+    let txRes, stRes, itRes, txLevel = 0, setLevel = 0, noItemsTable = false;
     try {
       // 내역: member_id 칸이 없으면(003 전) 예전 칸만으로
       const loadTx = async () => {
-        const r = await supabase.from('transactions').select(`${TX_COLS},member_id`);
-        if (!isSchemaError(r.error)) return r;
-        txLegacy = true;
-        return supabase.from('transactions').select(TX_COLS);
+        let r;
+        for (let i = 0; i < TX_COL_SETS.length; i += 1) {
+          r = await supabase.from('transactions').select(TX_COL_SETS[i]);
+          if (!isSchemaError(r.error)) { txLevel = i; return r; }
+        }
+        return r;
       };
       // 설정: 최신 칸 묶음부터 시도
       const loadSettings = async () => {
@@ -174,8 +189,8 @@ export function useLedger(userId) {
       setStatus('error');
       return;
     }
-    legacyRef.current = txLegacy;
-    setSchemaOutdated(txLegacy || setLevel > 0 || noItemsTable);
+    legacyRef.current = txLevel;
+    setSchemaOutdated(txLevel > 0 || setLevel > 0 || noItemsTable);
     const items = itRes?.data && !itRes.error
       ? Object.fromEntries(itRes.data.map((r) => [r.id, fromItemRow(r)]))
       : serverRef.current.items || {}; // 못 받았으면 기존 목록 유지
@@ -241,7 +256,7 @@ export function useLedger(userId) {
           if (isSchemaError(e)) {
             setSchemaOutdated(true);
             // 내역 저장이 member_id 때문에 실패했다면 예전 형식으로 한 번 더 (사람 없는 내역은 이걸로 저장됨)
-            if (op.kind === 'upsert' && !legacyRef.current) { legacyRef.current = true; continue; }
+            if (op.kind === 'upsert' && legacyRef.current < 2) { legacyRef.current += 1; continue; }
             skipped.add(op.opId); // 업데이트되면 다음 시도에 올라감
             continue;
           }
@@ -319,7 +334,7 @@ export function useLedger(userId) {
     }
     const cache = readCache(userId);
     serverRef.current = cache || EMPTY_STATE;
-    legacyRef.current = false;
+    legacyRef.current = 0;
     setSchemaOutdated(false);
     setServer(serverRef.current);
     memQueue.current = readQueue(userId);
@@ -486,6 +501,7 @@ export function useLedger(userId) {
     recurring: view.recurring,
     categories: view.categories,
     catBudgets: view.catBudgets,
+    cards: view.cards,
     schemaOutdated,
     thisMonth: ymOf(new Date(today)),
     status,

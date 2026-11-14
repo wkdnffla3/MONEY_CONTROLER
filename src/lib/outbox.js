@@ -30,7 +30,32 @@ export function isValidTx(t) {
     && isStr(t.category, 20)
     && typeof (t.memo ?? '') === 'string' && (t.memo ?? '').length <= 100
     && typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date)
-    && (t.memberId == null || isStr(t.memberId, 64));
+    && (t.memberId == null || isStr(t.memberId, 64))
+    && (t.tags == null || isValidTags(t.tags))
+    && (t.cardId == null || isStr(t.cardId, 64))
+    && (t.inst == null || (Number.isInteger(t.inst) && t.inst >= 1 && t.inst <= 36));
+}
+
+/** 태그: 최대 5개, 각 1~12자, 중복 없음 */
+export const MAX_TAGS = 5;
+export const MAX_TAG_LEN = 12;
+export function isValidTags(tags) {
+  return Array.isArray(tags) && tags.length <= MAX_TAGS
+    && tags.every((x) => isStr(x, MAX_TAG_LEN) && !!x.trim()) && new Set(tags).size === tags.length;
+}
+
+/** 신용카드: 최대 10개 { id, name(1~16자), payDay(1~31), closeDay(1~31), color } */
+export function isValidCards(list) {
+  if (!Array.isArray(list) || list.length > 10) return false;
+  const ids = new Set();
+  for (const c of list) {
+    if (!c || typeof c !== 'object' || !isStr(c.id, 40) || ids.has(c.id)) return false;
+    if (!isStr(c.name, 16) || !c.name.trim()) return false;
+    for (const k of ['payDay', 'closeDay']) if (!Number.isInteger(c[k]) || c[k] < 1 || c[k] > 31) return false;
+    if (!Number.isInteger(c.color) || c.color < 0 || c.color > 99) return false;
+    ids.add(c.id);
+  }
+  return true;
 }
 
 /** 함께 쓰는 사람 목록: 최대 10명, 이름 1~12자, id 중복 없음 */
@@ -100,6 +125,7 @@ export const SETTINGS = {
   recurring:  { column: 'recurring',   valid: isValidRecurring,       empty: [] },
   categories: { column: 'categories',  valid: isValidCategories,      empty: null },
   catBudgets: { column: 'cat_budgets', valid: isValidCatBudgets,      empty: {} },
+  cards:      { column: 'cards',       valid: isValidCards,           empty: [] },
 };
 const isSetting = (kind) => Object.prototype.hasOwnProperty.call(SETTINGS, kind);
 const cleanSetting = (kind, v) => (SETTINGS[kind].valid(v) ? v : SETTINGS[kind].empty);
