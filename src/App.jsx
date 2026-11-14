@@ -62,8 +62,8 @@ import SubscriptionFinder from './components/SubscriptionFinder';
 import { detectSubscriptions, ruleFromSuggestion } from './lib/subscriptions';
 import { isValidItem, isValidTx } from './lib/outbox';
 
-// 페이지: 주소 끝이 #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
-const PAGES = ['shopping', 'report'];
+// 페이지: 주소 끝이 #list 면 내역, #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
+const PAGES = ['list', 'shopping', 'report'];
 const pageFromHash = () => { const h = window.location.hash.slice(1); return PAGES.includes(h) ? h : 'ledger'; };
 
 const thisMonth = () => { const d = new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1 }; };
@@ -180,7 +180,8 @@ export default function App() {
   const openNotified = (url) => {
     const u = String(url || '');
     const txId = new URLSearchParams(u.split('?')[1]?.split('#')[0] || '').get('tx');
-    changePage(u.includes('#shopping') ? 'shopping' : 'ledger');
+    // 장보기 알림 → 장보기, 월간 리포트 → 리포트, 새 내역·댓글 → 내역
+    changePage(u.includes('#shopping') ? 'shopping' : u.includes('#report') ? 'report' : 'list');
     if (txId) setSheet({ kind: 'edit', id: txId }); // 댓글 알림 → 그 내역 열기
   };
   const openNotifiedRef = useRef(openNotified);
@@ -196,7 +197,7 @@ export default function App() {
   // ---- 키보드 ←/→ 로 달 이동 ----
   useEffect(() => {
     const onKey = (e) => {
-      if (sheet || pageRef.current !== 'ledger' || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+      if (sheet || !['ledger', 'list'].includes(pageRef.current) || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
       if (e.key === 'ArrowLeft') setYm(prevMonth);
       if (e.key === 'ArrowRight') setYm(nextMonth);
     };
@@ -335,6 +336,15 @@ export default function App() {
     }
   };
 
+  // PC 오른쪽 '새 내역' 입력칸 (가계부·내역 페이지 공통)
+  const sideForm = (
+    <aside className="side-form card" aria-label="내역 추가">
+      <h2 style={{ color: 'var(--ink)', fontSize: 16 }}>새 내역</h2>
+      <TxForm key={`${ymKey(ym.y, ym.m)}-${meId}-${members.map((m) => m.id).join()}`} defaultDate={defaultDate}
+        members={members} defaultMemberId={formDefaultMember} onSubmit={(d) => saveTx(newId(), d, false)} />
+    </aside>
+  );
+
   // 공통: 설정 저장 후 결과 알림
   const notifySaved = (p, msg) => p
     .then(({ synced }) => show(msg + savedSuffix(synced, navigator.onLine !== false)))
@@ -462,6 +472,35 @@ export default function App() {
             <ReportPage allTx={whoTx} year={reportYear} onYear={setReportYear} members={members} cards={ledger.cards}
               who={whoValid} whoLabel={whoLabel} onPickMonth={(m) => { setYm(m); changePage('ledger'); }} />
           </>
+        ) : page === 'list' ? (
+        <div className="layout">
+          <main className="grid">
+            <MonthBar
+              ym={ym}
+              onPrev={() => setYm(prevMonth)}
+              onNext={() => setYm(nextMonth)}
+              onToday={() => setYm(thisMonth())}
+            />
+            <WhoFilter members={members} who={whoValid} onChange={setWho} />
+            <TxList
+              members={members}
+              items={viewTx}
+              filter={filter}
+              onFilter={setFilter}
+              query={query}
+              onQuery={setQuery}
+              onOpen={(id) => setSheet({ kind: 'edit', id })}
+              view={listView}
+              onView={(v) => { setListView(v); setCalDay(null); }}
+              ym={ym}
+              day={calDay && calDay.startsWith(ymKey(ym.y, ym.m)) ? calDay : null}
+              onDay={setCalDay}
+              onSearch={() => setSheet({ kind: 'search' })}
+              commentCounts={comments.counts}
+            />
+          </main>
+          {sideForm}
+        </div>
         ) : (
         <div className="layout">
           <main className="grid">
@@ -487,29 +526,9 @@ export default function App() {
               <MemberSummary list={monthTx} members={members} who={whoValid} onSelect={setWho}
                 onManage={() => setSheet({ kind: 'members' })} />
             </section>
-            <TxList
-              members={members}
-              items={viewTx}
-              filter={filter}
-              onFilter={setFilter}
-              query={query}
-              onQuery={setQuery}
-              onOpen={(id) => setSheet({ kind: 'edit', id })}
-              view={listView}
-              onView={(v) => { setListView(v); setCalDay(null); }}
-              ym={ym}
-              day={calDay && calDay.startsWith(ymKey(ym.y, ym.m)) ? calDay : null}
-              onDay={setCalDay}
-              onSearch={() => setSheet({ kind: 'search' })}
-              commentCounts={comments.counts}
-            />
           </main>
 
-          <aside className="side-form card" aria-label="내역 추가">
-            <h2 style={{ color: 'var(--ink)', fontSize: 16 }}>새 내역</h2>
-            <TxForm key={`${ymKey(ym.y, ym.m)}-${meId}-${members.map((m) => m.id).join()}`} defaultDate={defaultDate}
-              members={members} defaultMemberId={formDefaultMember} onSubmit={(d) => saveTx(newId(), d, false)} />
-          </aside>
+          {sideForm}
         </div>
         )}
       </div>

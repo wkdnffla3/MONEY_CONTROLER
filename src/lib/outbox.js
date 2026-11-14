@@ -20,6 +20,8 @@ export const newId = () =>
 // ---------- 값 검사 ----------
 // 기기 저장소는 손상되거나 조작될 수 있으므로, 읽을 때마다 형식을 확인하고 이상한 항목은 버림
 export const MAX_AMOUNT = 9_999_999_999;
+/** 메모 최대 글자 수 (링크도 들어가게 200자, DB는 011_memo_200.sql 부터) */
+export const MAX_MEMO = 200;
 const isStr = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
 const isAmount = (v, min) => Number.isSafeInteger(v) && v >= min && v <= MAX_AMOUNT;
 
@@ -28,7 +30,7 @@ export function isValidTx(t) {
     && (t.type === 'expense' || t.type === 'income')
     && isAmount(t.amount, 1)
     && isStr(t.category, 20)
-    && typeof (t.memo ?? '') === 'string' && (t.memo ?? '').length <= 100
+    && typeof (t.memo ?? '') === 'string' && (t.memo ?? '').length <= MAX_MEMO
     && typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date)
     && (t.memberId == null || isStr(t.memberId, 64))
     && (t.tags == null || isValidTags(t.tags))
@@ -81,7 +83,7 @@ export function isValidRecurring(list) {
   for (const r of list) {
     if (!r || typeof r !== 'object' || !isStr(r.id, 40) || ids.has(r.id)) return false;
     if (!(r.type === 'expense' || r.type === 'income') || !isAmount(r.amount, 1) || !isStr(r.category, 20)) return false;
-    if (typeof (r.memo ?? '') !== 'string' || (r.memo ?? '').length > 100) return false;
+    if (typeof (r.memo ?? '') !== 'string' || (r.memo ?? '').length > MAX_MEMO) return false;
     if (!(r.memberId == null || isStr(r.memberId, 64))) return false;
     if (!Number.isInteger(r.day) || r.day < 1 || r.day > 31) return false;
     if (!isYm(r.start) || !(r.end == null || isYm(r.end)) || !(r.last == null || isYm(r.last))) return false;
@@ -124,7 +126,7 @@ export function isValidFavorites(list) {
     if (!f || typeof f !== 'object' || !isStr(f.id, 40) || ids.has(f.id)) return false;
     if (!isStr(f.label, 16) || !f.label.trim()) return false;
     if (!(f.type === 'expense' || f.type === 'income') || !isAmount(f.amount, 0) || !isStr(f.category, 20)) return false;
-    if (typeof (f.memo ?? '') !== 'string' || (f.memo ?? '').length > 100) return false;
+    if (typeof (f.memo ?? '') !== 'string' || (f.memo ?? '').length > MAX_MEMO) return false;
     if (!(f.memberId == null || isStr(f.memberId, 64)) || !(f.cardId == null || isStr(f.cardId, 64))) return false;
     if (!(f.tags == null || isValidTags(f.tags))) return false;
     ids.add(f.id);
@@ -159,7 +161,7 @@ export function isValidItem(i) {
     && Number.isSafeInteger(i.price) && i.price >= 0 && i.price <= MAX_AMOUNT
     && isStr(i.category, 20)
     && (i.memberId == null || isStr(i.memberId, 64))
-    && typeof (i.memo ?? '') === 'string' && (i.memo ?? '').length <= 100
+    && typeof (i.memo ?? '') === 'string' && (i.memo ?? '').length <= MAX_MEMO
     && typeof i.checked === 'boolean'
     && (i.status === 'todo' || i.status === 'bought')
     && (i.paid == null || isAmount(i.paid, 1))
@@ -173,6 +175,8 @@ export function isValidOp(o) {
   if (o.kind === 'delete') return isStr(o.id, 64);
   if (o.kind === 'item') return isStr(o.id, 64) && isValidItem(o.data);
   if (o.kind === 'itemDel') return isStr(o.id, 64);
+  // 카테고리 이름 변경: 서버에서 한 번에 바꿈 (내역마다 따로 보내지 않음)
+  if (o.kind === 'renameCat') return (o.type === 'expense' || o.type === 'income') && isStr(o.from, 20) && isStr(o.to, 20) && o.from !== o.to;
   if (isSetting(o.kind)) return SETTINGS[o.kind].valid(o.value);
   return false;
 }
@@ -236,7 +240,9 @@ export const clearUserData = (uid) => { remove(cKey(uid)); remove(qKey(uid)); };
 /** 새 작업을 목록에 넣으면서 같은 대상에 대한 이전 작업을 지움 */
 /** 두 작업이 같은 대상을 바꾸는지 (같은 내역 ID, 또는 같은 종류의 설정) */
 // 대상 키: 설정은 종류별, 내역은 tx:ID, 장보기 물품은 item:ID (서로 섞이지 않게)
+// 이름 변경은 순서대로 모두 실행돼야 해서(가→나 다음 나→다) 합치지 않음
 const targetKey = (o) => (isSetting(o.kind) ? `set:${o.kind}`
+  : o.kind === 'renameCat' ? `rename:${o.opId}`
   : o.kind === 'item' || o.kind === 'itemDel' ? `item:${o.id}` : `tx:${o.id}`);
 export const sameTarget = (a, b) => targetKey(a) === targetKey(b);
 
@@ -255,7 +261,11 @@ export function applyQueue(state, queue) {
     else if (op.kind === 'delete') delete next.tx[op.id];
     else if (op.kind === 'item') next.items[op.id] = op.data;
     else if (op.kind === 'itemDel') delete next.items[op.id];
-    else if (isSetting(op.kind)) next[op.kind] = op.value;
+    else if (op.kind === 'renameCat') {
+      for (const [id, t] of Object.entries(next.tx)) {
+        if (t.type === op.type && t.category === op.from) next.tx[id] = { ...t, category: op.to };
+      }
+    } else if (isSetting(op.kind)) next[op.kind] = op.value;
   }
   return next;
 }
@@ -264,6 +274,12 @@ export function applyQueue(state, queue) {
  * DB에 아직 새 칸이 없을 때(업데이트 SQL 미실행) 나는 오류인가.
  * 42703 = 없는 칸, PGRST204 = API가 칸을 모름. 데이터를 버리지 않고 보관해야 함.
  */
+/** DB 메모 길이 제한(011 전: 100자)에 걸린 오류인지 — 데이터를 버리지 말고 011 실행을 안내해야 함 */
+export function isMemoLimitError(err) {
+  return !!err && String(err.code) === '23514'
+    && /memo|settings_(recurring|favorites)_/.test(String(err.message || ''));
+}
+
 export function isSchemaError(err) {
   if (!err) return false;
   const code = String(err.code || '');

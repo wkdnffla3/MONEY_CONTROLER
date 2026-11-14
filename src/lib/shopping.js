@@ -1,3 +1,4 @@
+import { MAX_MEMO } from './outbox.js';
 /**
  * 장보기 목록 → 가계부 연동
  *
@@ -52,7 +53,7 @@ export function planPurchase(items, opts) {
       id: txId,
       data: {
         type: 'expense', amount: opts.total, category: opts.category,
-        memo: (opts.memo || defaultMemo(items)).slice(0, 100), date, memberId: opts.memberId ?? null, createdAt: now,
+        memo: (opts.memo || defaultMemo(items)).slice(0, MAX_MEMO), date, memberId: opts.memberId ?? null, createdAt: now,
       },
     });
     // 합계를 물품별 금액 비율로 나눠 기록(구매 기록 표시용). 마지막 물품이 나머지를 가져가 합이 정확히 맞게
@@ -72,7 +73,7 @@ export function planPurchase(items, opts) {
         id: txId,
         data: {
           type: 'expense', amount, category: i.category,
-          memo: `장보기: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`.slice(0, 100), date,
+          memo: `장보기: ${i.name}${i.qty > 1 ? ` ×${i.qty}` : ''}`.slice(0, MAX_MEMO), date,
           memberId: i.memberId ?? opts.memberId ?? null, createdAt: now + k,
         },
       });

@@ -26,7 +26,8 @@ assert.equal(isRetryable({ message: 'value out of range', code: '22003' }), fals
 const good = { type: 'expense', amount: 1000, category: '식비', memo: '', date: '2026-11-12' };
 assert.equal(isValidTx(good), true);
 for (const bad of [null, 5, {}, { ...good, type: 'x' }, { ...good, amount: 0 }, { ...good, amount: 1e16 }, { ...good, amount: 1.5 },
-  { ...good, category: '' }, { ...good, memo: 'x'.repeat(101) }, { ...good, date: '2026/11/12' }]) assert.equal(isValidTx(bad), false);
+  { ...good, category: '' }, { ...good, memo: 'x'.repeat(201) }, { ...good, date: '2026/11/12' }]) assert.equal(isValidTx(bad), false);
+assert.equal(isValidTx({ ...good, memo: 'https://example.com/' + 'a'.repeat(180) }), true); // 200자 링크 OK
 assert.equal(isValidOp({ opId: 'a', kind: 'upsert', id: 't1', data: good }), true);
 for (const bad of [null, 5, {kind:'upsert'}, { opId: 'a', kind: 'upsert', id: 't1', data: null }, { opId: 'a', kind: 'drop', id: 't1' },
   { opId: 'a', kind: 'budget', value: -1 }, { opId: 'a', kind: 'delete', id: 'x'.repeat(65) }]) assert.equal(isValidOp(bad), false);
@@ -69,4 +70,30 @@ assert.equal(P.reduce((a, b) => a + b, 0), 100); assert.deepEqual(P, [46, 27, 9,
 assert.deepEqual(sharePercents([1, 1, 1], 3), [34, 33, 33]);
 assert.deepEqual(sharePercents([0, 0], 0), [0, 0]);
 assert.equal(S.rows.reduce((a, r) => a + r.pct, 0), 100);
+// ===== 카테고리 이름 변경 작업 (요청 1번) =====
+{
+  const r = (opId, type, from, to) => ({ opId, kind: 'renameCat', type, from, to });
+  assert.ok(isValidOp(r('o1', 'expense', '식비', '밥값')));
+  assert.ok(!isValidOp(r('o2', 'expense', '식비', '식비')));          // 같은 이름
+  assert.ok(!isValidOp(r('o3', 'transfer', '식비', '밥값')));          // 이상한 종류
+  assert.ok(!isValidOp(r('o4', 'expense', '', '밥값')));
+  assert.ok(!isValidOp(r('o5', 'expense', '식비', 'x'.repeat(21))));  // 21자
+  // 가→나, 나→다 연속 변경은 합쳐지지 않고 순서대로 남음
+  let q = coalesce([], r('a', 'expense', '가', '나'));
+  q = coalesce(q, r('b', 'expense', '나', '다'));
+  assert.equal(q.length, 2);
+  // 화면 반영: 같은 종류·같은 이름만, 순서대로
+  const st = { tx: {
+    t1: { type: 'expense', category: '가', amount: 1, memo: '유지' },
+    t2: { type: 'income', category: '가', amount: 2 },     // 수입은 그대로
+    t3: { type: 'expense', category: '기타', amount: 3 },
+  } };
+  const v = applyQueue(st, q);
+  assert.equal(v.tx.t1.category, '다'); assert.equal(v.tx.t1.memo, '유지');
+  assert.equal(v.tx.t2.category, '가'); assert.equal(v.tx.t3.category, '기타');
+  assert.equal(st.tx.t1.category, '가'); // 원본은 안 바뀜
+  // 이름 변경 전에 넣어 둔 내역 수정도 바뀐 이름으로 보임
+  const v2 = applyQueue({ tx: {} }, [{ opId: 'u', kind: 'upsert', id: 'n1', data: { type: 'expense', category: '가', amount: 5 } }, r('c', 'expense', '가', '나')]);
+  assert.equal(v2.tx.n1.category, '나');
+}
 console.log('outbox unit tests: all passed');

@@ -43,6 +43,17 @@
       ]
     },
     {
+      "name": "내역 보기",
+      "short_name": "내역",
+      "url": "/#list",
+      "icons": [
+        {
+          "src": "/icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
       "name": "장보기 목록",
       "short_name": "장보기",
       "url": "/#shopping",
