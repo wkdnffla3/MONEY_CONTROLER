@@ -9,7 +9,9 @@ ledger-react/
 ├─ index.html              # 빈 껍데기 (React가 #root 에 그림)
 ├─ vercel.json             # 보안 헤더(CSP, HSTS 등)
 ├─ .env.example            # 환경변수 예시 → .env.local 로 복사
-├─ supabase/schema.sql     # DB 테이블 + RLS 보안 규칙
+├─ supabase/schema.sql     # DB 테이블 + RLS 보안 규칙 (00x_*.sql = 기존 DB용 업데이트)
+├─ supabase/functions/     # push-notify(웹 푸시 발송), _shared/notifyMessage.js(알림 문구)
+├─ scripts/gen-vapid.mjs   # 웹 푸시 키 만들기
 └─ src/
    ├─ main.jsx             # 시작점
    ├─ App.jsx              # 화면 조립, 상태(선택한 달·필터·열린 시트)
@@ -194,6 +196,68 @@ npm run dev                  # http://localhost:5173
 | `src/lib/exportTx.js` | 내보내기·검색 결과 공통 CSV |
 | `src/components/CalendarView.jsx` · `AdvancedSearch.jsx` · `ReportPage.jsx` · `MonthCompare.jsx` · `CardBills.jsx` · `CardManager.jsx` · `TagInput.jsx` | 화면 |
 | `tests/analysis.test.mjs` | 위 계산 단위 테스트 (`npm test`) |
+| `tests/notify.test.mjs` | 알림 문구·방해 금지 시간·VAPID 키 단위 테스트 |
+
+## 알림 (다른 사람이 추가하면 알려주기)
+
+두 가지 방법이 함께 들어 있어요. **방법 1은 설정 없이 바로**, 방법 2는 아래 설정을 마친 뒤 기기마다 켜면 동작합니다.
+
+| | 방법 1: 앱 안 알림 | 방법 2: 웹 푸시 |
+|---|---|---|
+| 언제 오나 | 앱(탭)이 열려 있을 때 | 앱을 닫아 둬도 |
+| 모양 | 화면 위 배너 (6초 뒤 사라짐, 누르면 해당 페이지로). 다른 탭에 가 있으면 시스템 알림 | 휴대폰·PC 시스템 알림 |
+| 설정 | 없음 | 아래 1~5단계 (한 번) + 기기마다 "푸시 켜기" |
+| 원리 | Supabase Realtime 으로 받은 새 줄 | DB 웹훅 → Edge Function `push-notify` → 웹 푸시 |
+
+공통 규칙 (`supabase/functions/_shared/notifyMessage.js` 하나를 앱과 서버가 같이 씀)
+- 알리는 것: 가계부 내역 추가, 장보기 물품 추가, 장보기 결제 확정. 수정·삭제와 반복 내역 자동 등록은 알리지 않아요.
+- 내가 이 기기에서 입력한 건 이 기기에 알리지 않아요 (`device_id`).
+- 문구 예: "민지님이 지출을 추가했어요 · 식비 12,000원 · 점심". 사람을 정하지 않은 내역은 "다른 기기에서 …".
+- ☰ 메뉴 → **🔔 알림**: 앱 안 알림 켜기/끄기, 이 기기 푸시 켜기/끄기, 받을 종류, 방해 금지 시간(푸시·시스템 알림만 막음). 설정은 기기마다 따로예요.
+- 로그아웃하면 그 기기의 푸시는 자동으로 해제돼요.
+
+### 웹 푸시 설정 (한 번)
+
+**1. DB 업데이트** — SQL Editor 에서 `supabase/007_notifications.sql` 실행 (003~006 다음). 기기 ID 칸과 푸시 구독 테이블을 만들어요. 실행 전에도 저장·앱 안 알림은 정상 동작해요.
+
+**2. VAPID 키 만들기** — 내 컴퓨터에서 한 번:
+```bash
+node scripts/gen-vapid.mjs
+```
+공개키·비밀키·웹훅 비밀 값 예시가 나와요. **비밀키와 웹훅 비밀 값은 Vercel·깃허브·채팅에 올리지 마세요.**
+
+**3. Vercel 환경 변수** — Project Settings → Environment Variables 에 추가하고 다시 배포:
+```
+VITE_VAPID_PUBLIC_KEY = (공개키)
+```
+
+**4. Edge Function 배포** — [Supabase CLI](https://supabase.com/docs/guides/cli) 설치 후 프로젝트 폴더에서:
+```bash
+supabase login
+supabase link --project-ref <프로젝트ID>          # URL https://<프로젝트ID>.supabase.co 의 그 부분
+supabase secrets set VAPID_PUBLIC_KEY=<공개키> VAPID_PRIVATE_KEY=<비밀키> \
+  VAPID_SUBJECT=mailto:<내 이메일> WEBHOOK_SECRET=<웹훅 비밀 값>
+supabase functions deploy push-notify --no-verify-jwt
+```
+`--no-verify-jwt` 는 로그인 토큰 대신 `x-webhook-secret` 헤더로 호출을 확인한다는 뜻이에요. 비밀 값이 없거나 틀린 요청은 401로 거절돼요. `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` 는 Supabase가 함수에 자동으로 넣어 줘서 따로 설정하지 않아요.
+
+**5. Database Webhook 2개** — 대시보드 → Database → Webhooks → Create a new hook:
+| 항목 | 값 |
+|---|---|
+| Table | `transactions` (두 번째는 `shopping_items`) |
+| Events | **Insert** 만 |
+| Type | Supabase Edge Functions → `push-notify`, Method `POST` |
+| HTTP Headers | `x-webhook-secret` : (4단계의 웹훅 비밀 값) |
+
+**6. 기기마다 켜기** — 앱 ☰ → 🔔 알림 → **푸시 켜기** → 브라우저 알림 "허용". "테스트 알림"으로 표시를 확인할 수 있어요.
+- 아이폰·아이패드: Safari 공유 → **홈 화면에 추가** 후, 홈 화면 아이콘으로 열어야 켤 수 있어요 (iOS 16.4 이상).
+- 안드로이드 크롬·PC 크롬/엣지/파이어폭스: 사이트에서 바로 가능.
+
+**잘 안 될 때**
+- 앱에 "설정 필요"가 보이면 → 3단계 환경 변수 후 **다시 배포**했는지 확인.
+- 켰는데 알림이 안 오면 → 대시보드 Edge Functions → push-notify → Logs. `401`이면 웹훅 헤더 값, `VAPID keys not set`이면 4단계 secrets 확인. 응답의 `sent / skipped / removed` 로 몇 기기에 보냈는지 보여요.
+- 같은 기기에서 입력한 건 원래 안 와요. 다른 휴대폰이나 다른 브라우저로 시험해 보세요.
+- 푸시는 Supabase 무료 요금제의 Edge Function 호출 한도 안에서 충분히 쓸 수 있는 양이에요 (입력 1건당 호출 1번).
 
 ## DB 값 제한
 
@@ -204,4 +268,6 @@ npm run dev                  # http://localhost:5173
 - anon 키는 공개돼도 되는 키입니다. 데이터 보호는 `schema.sql` 의 RLS 정책이 담당해요.
 - `service_role` 키는 절대 `VITE_` 환경변수나 코드에 넣지 마세요. `VITE_` 로 시작하는 값은 빌드 결과에 그대로 포함됩니다.
 - 라이브러리는 npm + `package-lock.json` 으로 버전이 고정되고, 내 도메인에서 함께 서빙돼서 CDN·SRI 걱정이 없어요.
+- VAPID 비밀키·웹훅 비밀 값은 `supabase secrets` 에만 둡니다. 앱(Vercel)에는 공개키(`VITE_VAPID_PUBLIC_KEY`)만 들어가요.
+- 푸시 구독 테이블은 RLS로 자기 기기 줄만 보고 쓸 수 있고, 발송 함수만 service_role 로 같은 계정의 기기 목록을 읽어요.
 - `vercel.json` 의 CSP는 내 사이트 스크립트와 Supabase 연결만 허용합니다. 외부 서비스(예: CAPTCHA)를 추가하면 CSP에도 그 주소를 더해야 해요.

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node tests/outbox.test.mjs && node tests/features.test.mjs && node tests/analysis.test.mjs"
+    "test": "node tests/outbox.test.mjs && node tests/features.test.mjs && node tests/analysis.test.mjs && node tests/notify.test.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.118.0",

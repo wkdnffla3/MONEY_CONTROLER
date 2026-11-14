@@ -7,6 +7,7 @@ import {
 import { planRecurring, ymOf } from '../lib/recurring';
 import { planPurchase } from '../lib/shopping';
 import { useOnline } from './useOnline';
+import { getDeviceId, isOwn, markOwn } from '../lib/device';
 
 export { newId };
 
@@ -26,7 +27,7 @@ const fromRow = (r) => ({
 // level: 0 = 최신(006까지), 1 = 006 전(태그·카드 칸 없음), 2 = 003 전(member_id 칸도 없음).
 // 없는 칸은 기본값일 때만 빼고 보냄 → 값이 있는 내역은 실패해서 보관됐다가 DB 업데이트 후 올라감
 const hasExtra = (t) => (t.tags && t.tags.length > 0) || !!t.cardId || (t.inst || 1) > 1;
-const toRow = (id, userId, t, level) => {
+const toRow = (id, userId, t, level, device) => {
   const row = {
     id,
     user_id: userId,
@@ -43,6 +44,7 @@ const toRow = (id, userId, t, level) => {
     row.card_id = t.cardId ?? null;
     row.inst_months = t.inst || 1;
   }
+  if (device) row.device_id = device; // 007 적용 후: 어느 기기에서 입력했는지 (알림에서 내 기기 제외용)
   return row;
 };
 
@@ -65,7 +67,8 @@ const fromItemRow = (r) => ({
   boughtAt: r.bought_at ?? null,
   createdAt: Number(r.created_at) || 0,
 });
-const toItemRow = (id, userId, i) => ({
+const toItemRow = (id, userId, i, device) => ({
+  ...(device ? { device_id: device } : {}),
   id, user_id: userId, name: i.name, qty: i.qty, price: i.price, category: i.category, member_id: i.memberId ?? null,
   memo: i.memo || '', checked: i.checked, status: i.status, paid: i.paid ?? null, tx_id: i.txId ?? null,
   bought_at: i.boughtAt ?? null, created_at: i.createdAt,
@@ -98,8 +101,22 @@ const hasPendingFor = (queue, op) => queue.some((o) => sameTarget(o, op));
  * 온라인이면 즉시, 오프라인이면 연결되는 순간 순서대로 서버에 올라감.
  * 중복 방지 원리는 lib/outbox.js 맨 위 설명 참고.
  */
-export function useLedger(userId) {
+// device_id 칸이 없다는(007 전) 오류인지
+const isDeviceColError = (e) => isSchemaError(e) && /device_id/.test(String(e?.message || ''));
+// 실시간으로 받은 변경 중 알림 대상(다른 기기에서 새로 추가한 내역·물품)만 골라냄
+const remoteInsert = (table, payload) => {
+  if (payload?.eventType !== 'INSERT' || !payload.new || typeof payload.new.id !== 'string') return null;
+  const record = payload.new;
+  if (record.device_id && record.device_id === getDeviceId()) return null; // 이 기기에서 입력
+  if (isOwn(record.id)) return null; // 007 전이라 device_id가 없을 때: 이 기기에서 방금 저장한 ID
+  return { table, type: 'INSERT', record };
+};
+
+export function useLedger(userId, { onRemote } = {}) {
   const online = useOnline();
+  const onRemoteRef = useRef(onRemote);
+  onRemoteRef.current = onRemote;
+  const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
   const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
   const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트(003/004) 필요
   const [serverLoaded, setServerLoaded] = useState(false);     // 이번 접속에서 서버 데이터를 한 번 이상 받았는지
@@ -211,9 +228,9 @@ export function useLedger(userId) {
   const send = useCallback(async (op) => {
     try {
       let req;
-      if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current));
+      if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current, deviceColRef.current && getDeviceId()));
       else if (op.kind === 'delete') req = supabase.from('transactions').delete().eq('id', op.id);
-      else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data));
+      else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data, deviceColRef.current && getDeviceId()));
       else if (op.kind === 'itemDel') req = supabase.from('shopping_items').delete().eq('id', op.id);
       else if (SETTINGS[op.kind]) req = supabase.from('settings').upsert({ user_id: userId, [SETTINGS[op.kind].column]: op.value });
       else return { error: null };
@@ -253,6 +270,8 @@ export function useLedger(userId) {
         if (!op) break;
         const { error: e } = await send(op);
         if (e) {
+          // device_id 칸만 없는 거면(007 전) 그 칸을 빼고 바로 다시 보냄 — 알림만 덜 정확해질 뿐 저장엔 문제없음
+          if (isDeviceColError(e) && deviceColRef.current) { deviceColRef.current = false; continue; }
           if (isSchemaError(e)) {
             setSchemaOutdated(true);
             // 내역 저장이 member_id 때문에 실패했다면 예전 형식으로 한 번 더 (사람 없는 내역은 이걸로 저장됨)
@@ -335,6 +354,7 @@ export function useLedger(userId) {
     const cache = readCache(userId);
     serverRef.current = cache || EMPTY_STATE;
     legacyRef.current = 0;
+    deviceColRef.current = true;
     setSchemaOutdated(false);
     setServer(serverRef.current);
     memQueue.current = readQueue(userId);
@@ -343,11 +363,17 @@ export function useLedger(userId) {
     load().then(() => flushRef.current());
 
     const filter = `user_id=eq.${userId}`;
+    // 변경이 오면 새로 불러오고, 다른 기기에서 추가한 거면 알림으로 넘김
+    const onChange = (table) => (payload) => {
+      load();
+      const n = remoteInsert(table, payload);
+      if (n) { try { onRemoteRef.current?.(n); } catch { /* 알림 실패가 동기화를 막지 않게 */ } }
+    };
     const channel = supabase
       .channel(`ledger-${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter }, onChange('transactions'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, load)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, onChange('shopping_items'))
       .subscribe();
 
     const onVisible = () => {
@@ -392,6 +418,7 @@ export function useLedger(userId) {
   // ---- 저장 동작 (화면에서 호출) ----
   /** 작업을 목록에 넣고 전송을 시도. 결과: { synced } — 서버까지 올라갔으면 true */
   const enqueue = useCallback(async (op) => {
+    if (op.kind === 'upsert' || op.kind === 'item') markOwn([op.id]);
     setQ(coalesce(getQ(), op));
     await flush();
     const err = failed.current.get(op.opId);
@@ -403,6 +430,7 @@ export function useLedger(userId) {
   /** 여러 작업을 한 번에 목록에 넣고 한 번만 전송 (카테고리 이름 변경, 반복 내역 등록 등) */
   const enqueueMany = useCallback(async (ops) => {
     if (!ops.length) return { synced: true };
+    markOwn(ops.filter((o) => o.kind === 'upsert' || o.kind === 'item').map((o) => o.id));
     let q = getQ();
     for (const op of ops) q = coalesce(q, op);
     setQ(q);
