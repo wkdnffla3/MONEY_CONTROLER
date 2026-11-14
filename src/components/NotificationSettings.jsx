@@ -23,10 +23,12 @@ const KINDS = [
   ['tx', '가계부 내역 추가'],
   ['shop', '장보기 물품 추가'],
   ['purchase', '장보기 결제 확정'],
+  ['weekly', '주간 리포트', '월요일 오전 9시 · 지난주 지출 요약 (푸시)'],
+  ['monthly', '월간 리포트', '매월 1일 오전 9시 · 지난달 요약 (푸시)'],
 ];
 
 /** 알림 설정: 앱 안 알림 · 이 기기 웹 푸시 · 받을 내용 · 방해 금지 시간 */
-export default function NotificationSettings({ uid, prefs, onPrefs, onPushChange, onToast }) {
+export default function NotificationSettings({ uid, ledgerId, prefs, onPrefs, onPushChange, onToast }) {
   const [push, setPush] = useState('checking');
   const [busy, setBusy] = useState(false);
 
@@ -45,7 +47,7 @@ export default function NotificationSettings({ uid, prefs, onPrefs, onPushChange
   const togglePush = async () => {
     setBusy(true);
     try {
-      const s = push === 'on' ? await disablePush() : await enablePush(prefs);
+      const s = push === 'on' ? await disablePush() : await enablePush(prefs, ledgerId);
       setPush(s);
       onPushChange?.();
       onToast(s === 'on' ? '이 기기에서 푸시 알림을 켰어요' : '이 기기의 푸시 알림을 껐어요');
@@ -97,9 +99,10 @@ export default function NotificationSettings({ uid, prefs, onPrefs, onPushChange
       <section className="ns-sec">
         <h4>알림 받을 내용</h4>
         <div className="ns-kinds">
-          {KINDS.map(([k, t]) => (
+          {KINDS.map(([k, t, sub]) => (
             <label key={k} className="check">
-              <input type="checkbox" checked={prefs[k]} onChange={(e) => update({ [k]: e.target.checked })} /> {t}
+              <input type="checkbox" checked={prefs[k]} onChange={(e) => update({ [k]: e.target.checked })} />
+              <span>{t}{sub && <small className="ns-sub">{sub}</small>}</span>
             </label>
           ))}
         </div>

@@ -115,6 +115,23 @@ export function isValidCatBudgets(b) {
   return entries.length <= 60 && entries.every(([k, v]) => isStr(k, 20) && isAmount(v, 1));
 }
 
+/** 즐겨찾기: 최대 20개. amount 0 = 금액은 매번 입력 */
+export const MAX_FAVORITES = 20;
+export function isValidFavorites(list) {
+  if (!Array.isArray(list) || list.length > MAX_FAVORITES) return false;
+  const ids = new Set();
+  for (const f of list) {
+    if (!f || typeof f !== 'object' || !isStr(f.id, 40) || ids.has(f.id)) return false;
+    if (!isStr(f.label, 16) || !f.label.trim()) return false;
+    if (!(f.type === 'expense' || f.type === 'income') || !isAmount(f.amount, 0) || !isStr(f.category, 20)) return false;
+    if (typeof (f.memo ?? '') !== 'string' || (f.memo ?? '').length > 100) return false;
+    if (!(f.memberId == null || isStr(f.memberId, 64)) || !(f.cardId == null || isStr(f.cardId, 64))) return false;
+    if (!(f.tags == null || isValidTags(f.tags))) return false;
+    ids.add(f.id);
+  }
+  return true;
+}
+
 /**
  * 설정형 작업 종류 → 검사 함수, DB 칸 이름, 기본값.
  * 내역 ID가 없고, 같은 종류끼리는 마지막 것만 남게 합쳐짐.
@@ -126,6 +143,7 @@ export const SETTINGS = {
   categories: { column: 'categories',  valid: isValidCategories,      empty: null },
   catBudgets: { column: 'cat_budgets', valid: isValidCatBudgets,      empty: {} },
   cards:      { column: 'cards',       valid: isValidCards,           empty: [] },
+  favorites:  { column: 'favorites',   valid: isValidFavorites,       empty: [] },
 };
 const isSetting = (kind) => Object.prototype.hasOwnProperty.call(SETTINGS, kind);
 const cleanSetting = (kind, v) => (SETTINGS[kind].valid(v) ? v : SETTINGS[kind].empty);

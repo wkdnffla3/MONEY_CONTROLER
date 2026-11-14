@@ -49,6 +49,12 @@ import NotifyBanner from './components/NotifyBanner';
 import NotificationSettings from './components/NotificationSettings';
 import { useNotifier } from './hooks/useNotifier';
 import { disablePush } from './lib/push';
+import { useHousehold } from './hooks/useHousehold';
+import { normalizeCode, writeHousehold } from './lib/household';
+import { clearUserData } from './lib/outbox';
+import SharePanel from './components/SharePanel';
+import FavoritesBar from './components/FavoritesBar';
+import FavoritesManager from './components/FavoritesManager';
 
 // 페이지: 주소 끝이 #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
 const PAGES = ['shopping', 'report'];
@@ -67,7 +73,10 @@ export default function App() {
   const auth = useAuth();
   // 다른 기기에서 추가한 내역 → 알림 (notifier는 사람 목록이 필요해서 ledger 다음에 만들고 ref로 연결)
   const notifyRef = useRef(null);
-  const ledger = useLedger(auth.user?.id, { onRemote: (n) => notifyRef.current?.(n) });
+  // 지금 보는 가계부: 공유 가계부에 참여 중이면 그 가계부, 아니면 내 가계부
+  const household = useHousehold(auth.user?.id);
+  const ledgerId = household.ledgerId;
+  const ledger = useLedger(ledgerId, { onRemote: (n) => notifyRef.current?.(n), accountId: auth.user?.id, onForbidden: household.refresh });
   const notifier = useNotifier(auth.user?.id, ledger.members);
   notifyRef.current = notifier.notify;
   const { toast, show, hide } = useToast();
@@ -131,9 +140,21 @@ export default function App() {
   }, [allTx]);
   const whoLabel = whoValid === 'all' ? '' : whoValid === SHARED ? '공동' : findMember(members, whoValid)?.name || '';
 
-  // 이 기기를 쓰는 사람 (기기마다 저장). 로그인 사용자가 바뀌면 다시 읽음
+  // 이 기기를 쓰는 사람 (기기마다·가계부마다 저장). 로그인 사용자나 보는 가계부가 바뀌면 다시 읽음.
+  // 공유 가계부에 참여할 때 고른 사람은 서버에도 있어서 새 기기에서도 자동으로 채워짐
   const uid = auth.user?.id;
-  useEffect(() => { setMeId(uid ? getMe(uid) : null); setWho('all'); }, [uid]);
+  const meKey = uid && ledgerId && ledgerId !== uid ? `${uid}@${ledgerId}` : uid;
+  const serverPerson = household.personId;
+  useEffect(() => { setMeId(meKey ? getMe(meKey) || serverPerson || null : null); setWho('all'); }, [meKey, serverPerson]);
+
+  // 초대 링크(?join=코드)로 열면 로그인 후 공유 화면을 코드와 함께 열기
+  useEffect(() => {
+    if (!uid) return;
+    const code = normalizeCode(window.location.search);
+    if (!code) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    setSheet({ kind: 'share', code });
+  }, [uid]);
   // 새 내역의 기본 "누가": 특정 사람 보기 중이면 그 사람, 아니면 이 기기의 사람
   const formDefaultMember = whoValid !== 'all' && whoValid !== SHARED ? whoValid : meId;
   const defaultDate = isCurrentMonth(ym) ? todayStr() : `${ym.y}-${pad(ym.m)}-01`;
@@ -225,6 +246,31 @@ export default function App() {
       .catch((e) => show(`삭제하지 못했어요 · ${koError(e)}`));
   };
 
+  // ---- 즐겨찾기 ----
+  // 금액이 정해진 즐겨찾기 → 오늘 날짜로 바로 저장(되돌리기 가능), 금액 매번 입력 → 입력창 열기
+  const applyFavorite = (f) => {
+    if (!f.amount) { setSheet({ kind: 'add', prefill: f }); return; }
+    const id = newId();
+    const data = {
+      type: f.type, amount: f.amount, category: f.category, memo: f.memo || '', date: todayStr(),
+      memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : (formDefaultMember ?? null),
+      tags: f.tags || [], cardId: f.cardId && ledger.cards.some((c) => c.id === f.cardId) ? f.cardId : null, inst: 1, createdAt: Date.now(),
+    };
+    if (!isCurrentMonth(ym)) setYm(thisMonth());
+    ledger.saveTx(id, data)
+      .then(({ synced }) => show(`⭐ ${f.label} ${won(f.amount)} 저장${savedSuffix(synced, navigator.onLine !== false)}`,
+        () => ledger.deleteTx(id).then(() => show('되돌렸어요')).catch(() => {})))
+      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+  };
+  const saveFavorites = (list, msg) => notifySaved(ledger.saveSetting('favorites', list), msg);
+  const favoriteFromTx = (t) => {
+    if (ledger.favorites.length >= 20) { show('즐겨찾기는 20개까지 만들 수 있어요'); return; }
+    const label = (t.memo || t.category).trim().slice(0, 16) || t.category.slice(0, 16);
+    const fav = { id: newId().slice(0, 40), label, type: t.type, amount: t.amount, category: t.category, memo: t.memo || '',
+      memberId: t.memberId ?? null, cardId: t.cardId ?? null, tags: t.tags || [] };
+    saveFavorites([...ledger.favorites, fav], `"${label}" 즐겨찾기를 만들었어요`);
+  };
+
   // 공통: 설정 저장 후 결과 알림
   const notifySaved = (p, msg) => p
     .then(({ synced }) => show(msg + savedSuffix(synced, navigator.onLine !== false)))
@@ -254,7 +300,7 @@ export default function App() {
 
   const saveMembers = (list, me) => {
     closeSheet();
-    if (uid) setMe(uid, me);
+    if (meKey) setMe(meKey, me);
     setMeId(me);
     ledger.saveMembers(list)
       .then(({ synced }) => show('함께 쓰는 사람을 저장했어요' + savedSuffix(synced, navigator.onLine !== false)))
@@ -275,6 +321,8 @@ export default function App() {
     // 이 기기의 웹 푸시 해제 (다음 사람이 이 기기를 써도 알림이 오지 않게). 오래 걸리면 기다리지 않음
     await Promise.race([disablePush().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
     ledger.clearLocalData();
+    // 공유 가계부를 보던 중이었다면 내 원래 가계부 캐시와 공유 상태 기억도 지움
+    if (uid) { clearUserData(uid); writeHousehold(uid, null); }
     await auth.signOut();
   };
   const handleSignOut = () => {
@@ -329,8 +377,9 @@ export default function App() {
         )}
         {ledger.schemaOutdated && (
           <div className="notice show">
-            <b>DB 업데이트가 필요해요.</b> Supabase SQL Editor에서 <code>supabase/003_members.sql</code>을 실행해 주세요.
-            그 전까지 사람이 지정된 내역과 사람 목록은 이 기기에 보관됐다가, 업데이트되면 자동으로 올라가요.
+            <b>DB 업데이트가 필요해요.</b> Supabase SQL Editor에서 <code>supabase/{ledger.schemaNeed || '003'}_*.sql</code>부터
+            아직 실행하지 않은 업데이트 파일을 번호 순서대로 실행해 주세요.
+            그 전까지 새 기능에서 저장한 내용은 이 기기에 보관됐다가, 업데이트되면 자동으로 올라가요.
           </div>
         )}
         {ledger.storageFull && (
@@ -360,6 +409,7 @@ export default function App() {
             />
             <WhoFilter members={members} who={whoValid} onChange={setWho} />
             <Summary inc={totals.inc} exp={totals.exp} cmp={monthCmp} who={whoLabel} />
+            <FavoritesBar favorites={ledger.favorites} onUse={applyFavorite} onManage={() => setSheet({ kind: 'favorites' })} />
             <section className="grid insights">
               <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
                 note={whoLabel ? '예산은 모두의 지출 합계 기준이에요.' : ''} />
@@ -430,8 +480,8 @@ export default function App() {
 
       {sheet?.kind === 'add' && (
         <Sheet title="내역 추가" onClose={closeSheet}>
-          <TxForm autoFocus defaultDate={defaultDate} members={members} defaultMemberId={formDefaultMember}
-            onSubmit={(d) => saveTx(newId(), d, false)} />
+          <TxForm key={sheet.prefill?.id || 'new'} autoFocus defaultDate={sheet.prefill ? todayStr() : defaultDate} members={members}
+            defaultMemberId={formDefaultMember} prefill={sheet.prefill} onSubmit={(d) => saveTx(newId(), d, false)} />
         </Sheet>
       )}
       {sheet?.kind === 'edit' && editing && (
@@ -444,6 +494,7 @@ export default function App() {
             onSubmit={(d) => saveTx(editing.id, d, true)}
             onDelete={() => deleteTx(editing.id)}
           />
+          <button type="button" className="btn fav-add-btn" onClick={() => favoriteFromTx(editing)}>⭐ 즐겨찾기에 추가</button>
         </Sheet>
       )}
       {sheet?.kind === 'budget' && (
@@ -455,7 +506,8 @@ export default function App() {
       {sheet?.kind === 'menu' && (
         <Sheet title="설정" onClose={closeSheet}>
           <SettingsMenu onOpen={(kind) => setSheet({ kind })}
-            counts={{ recurring: ledger.recurring.filter((r) => r.active).length, members: members.length, cards: ledger.cards.length, catBudgets: Object.keys(ledger.catBudgets).length }} />
+            shared={household.joined || household.people.length > 1}
+            counts={{ favorites: ledger.favorites.length, recurring: ledger.recurring.filter((r) => r.active).length, members: members.length, cards: ledger.cards.length, catBudgets: Object.keys(ledger.catBudgets).length }} />
         </Sheet>
       )}
       {sheet?.kind === 'recurring' && (
@@ -485,9 +537,25 @@ export default function App() {
             filters={searchFilters} onFilters={setSearchFilters} onOpen={(id) => setSheet({ kind: 'edit', id, back: 'search' })} />
         </Sheet>
       )}
+      {sheet?.kind === 'share' && (
+        <Sheet title="가계부 공유" onClose={closeSheet}>
+          <SharePanel uid={uid} email={auth.user.email} household={household} members={members} pendingCount={ledger.pendingCount}
+            initialCode={sheet.code} onToast={show}
+            onChanged={async ({ personId }) => {
+              const h = await household.refresh();
+              if (h && personId) setMe(h.ledgerId !== uid ? `${uid}@${h.ledgerId}` : uid, personId);
+              notifier.refreshPush();
+            }} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'favorites' && (
+        <Sheet title="즐겨찾기" onClose={closeSheet}>
+          <FavoritesManager favorites={ledger.favorites} members={members} onSave={saveFavorites} />
+        </Sheet>
+      )}
       {sheet?.kind === 'notify' && notifier.prefs && (
         <Sheet title="알림" onClose={closeSheet}>
-          <NotificationSettings uid={uid} prefs={notifier.prefs} onPrefs={notifier.setPrefs}
+          <NotificationSettings uid={uid} ledgerId={ledgerId} prefs={notifier.prefs} onPrefs={notifier.setPrefs}
             onPushChange={notifier.refreshPush} onToast={show} />
         </Sheet>
       )}

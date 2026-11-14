@@ -75,6 +75,7 @@ const toItemRow = (id, userId, i, device) => ({
 });
 // 설정 칸: DB 업데이트 단계별로 있는 칸이 다름. 최신부터 시도해서 되는 것으로 불러옴
 const SETTINGS_COL_SETS = [
+  ['budget', 'members', 'recurring', 'categories', 'cat_budgets', 'cards', 'favorites'], // 008 적용
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets', 'cards'], // 006 적용
   ['budget', 'members', 'recurring', 'categories', 'cat_budgets'], // 004 적용
   ['budget', 'members'],                                           // 003 적용
@@ -112,13 +113,20 @@ const remoteInsert = (table, payload) => {
   return { table, type: 'INSERT', record };
 };
 
-export function useLedger(userId, { onRemote } = {}) {
+// userId = 지금 보는 가계부 ID (내 가계부면 내 계정 ID, 공유 가계부에 참여 중이면 그 가계부 ID)
+// accountId = 로그인한 계정 ID (전송 전 로그인 확인용)
+export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   const online = useOnline();
   const onRemoteRef = useRef(onRemote);
   onRemoteRef.current = onRemote;
+  const accountRef = useRef(accountId);
+  accountRef.current = accountId;
+  const onForbiddenRef = useRef(onForbidden);
+  onForbiddenRef.current = onForbidden;
   const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
   const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
-  const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트(003/004) 필요
+  const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트 필요
+  const [schemaNeed, setSchemaNeed] = useState(null);           // 먼저 실행할 업데이트 파일 번호
   const [serverLoaded, setServerLoaded] = useState(false);     // 이번 접속에서 서버 데이터를 한 번 이상 받았는지
   const [today, setToday] = useState(() => new Date().toDateString()); // 날짜가 바뀌면 반복 내역 확인
   const [queue, setQueue] = useState([]);                       // 아직 못 보낸 작업
@@ -169,7 +177,7 @@ export function useLedger(userId, { onRemote } = {}) {
     const seq = ++loadSeq.current;
     const startedAt = Date.now();
     setStatus((s) => (s === 'ok' ? 'ok' : 'loading'));
-    let txRes, stRes, itRes, txLevel = 0, setLevel = 0, noItemsTable = false;
+    let txRes, stRes, itRes, txLevel = 0, setLevel = 0, noItemsTable = false, noDeviceCol = false;
     try {
       // 내역: member_id 칸이 없으면(003 전) 예전 칸만으로
       const loadTx = async () => {
@@ -194,7 +202,12 @@ export function useLedger(userId, { onRemote } = {}) {
         if (isSchemaError(r.error)) { noItemsTable = true; return { data: null, error: null }; }
         return r;
       };
-      [txRes, stRes, itRes] = await Promise.all([loadTx(), loadSettings(), loadItems()]);
+      // 007(기기 ID 칸) 적용 여부: 없는 칸을 고르면 오류가 나는 것으로 확인 (줄은 가져오지 않음)
+      const probeDevice = async () => {
+        const r = await supabase.from('transactions').select('device_id').eq('id', '__probe__');
+        noDeviceCol = isSchemaError(r.error);
+      };
+      [txRes, stRes, itRes] = await Promise.all([loadTx(), loadSettings(), loadItems(), probeDevice().catch(() => {})]);
     } catch (e) {
       txRes = { error: e };
     }
@@ -207,7 +220,16 @@ export function useLedger(userId, { onRemote } = {}) {
       return;
     }
     legacyRef.current = txLevel;
-    setSchemaOutdated(txLevel > 0 || setLevel > 0 || noItemsTable);
+    // 아직 실행하지 않은 DB 업데이트 중 가장 앞 번호 (예: '006')
+    const need = [
+      txLevel === 2 ? '003' : txLevel === 1 ? '006' : null,
+      ['', '008', '006', '004', '003'][setLevel] || null,
+      noItemsTable ? '005' : null,
+      noDeviceCol ? '007' : null,
+    ].filter(Boolean).sort()[0] || null;
+    if (noDeviceCol) deviceColRef.current = false;
+    setSchemaNeed(need);
+    setSchemaOutdated(!!need);
     const items = itRes?.data && !itRes.error
       ? Object.fromEntries(itRes.data.map((r) => [r.id, fromItemRow(r)]))
       : serverRef.current.items || {}; // 못 받았으면 기존 목록 유지
@@ -258,7 +280,7 @@ export function useLedger(userId, { onRemote } = {}) {
       let droppedAny = false;
       // 만료된 로그인 토큰 갱신. 로그인 상태가 아니면 보내지 않음 (권한 오류로 데이터를 잃지 않게)
       const { data: sess } = (await supabase.auth.getSession().catch(() => null)) || {};
-      if (!sess?.session || sess.session.user?.id !== userId) {
+      if (!sess?.session || sess.session.user?.id !== (accountRef.current || userId)) {
         scheduleRetry(() => flushRef.current());
         return;
       }
@@ -280,6 +302,8 @@ export function useLedger(userId, { onRemote } = {}) {
             continue;
           }
           if (isRetryable(e)) {
+            // 권한 오류: 공유 가계부에서 내보내졌을 수 있음 → 공유 상태 다시 확인
+            if (String(e.code) === '42501') { try { onForbiddenRef.current?.(); } catch { /* 무시 */ } }
             scheduleRetry(() => flushRef.current());
             return;
           }
@@ -530,7 +554,9 @@ export function useLedger(userId, { onRemote } = {}) {
     categories: view.categories,
     catBudgets: view.catBudgets,
     cards: view.cards,
+    favorites: view.favorites,
     schemaOutdated,
+    schemaNeed,
     thisMonth: ymOf(new Date(today)),
     status,
     error,
