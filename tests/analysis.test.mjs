@@ -103,3 +103,54 @@ assert.equal(isValidCards([card, card2]), true);
 for (const bad of [[card, card], [{ ...card, payDay: 0 }], [{ ...card, closeDay: 32 }], [{ ...card, name: '' }], [{ ...card, name: 'x'.repeat(17) }]])
   assert.equal(isValidCards(bad), false);
 console.log('analysis unit tests: all passed');
+
+// ===== 구독 자동 발견 =====
+{
+  const { detectSubscriptions, ruleFromSuggestion, subscriptionKey } = await import('../src/lib/subscriptions.js');
+  const { isValidRecurring } = await import('../src/lib/outbox.js');
+  const { dueMonths } = await import('../src/lib/recurring.js');
+  const today = new Date(2026, 10, 20); // 2026-11-20
+  const tx = (id, date, amount, category, memo = '', type = 'expense') => ({ id, date, amount, category, memo, type, memberId: null });
+  const list = [
+    // 넷플릭스: 4달 연속, 15일 근처
+    tx('n1', '2026-08-15', 13500, '구독', '넷플릭스'), tx('n2', '2026-09-14', 13500, '구독', '넷플릭스 '), tx('n3', '2026-10-16', 13500, '구독', ' 넷플 릭스'),
+    tx('n4', '2026-11-15', 13500, '구독', '넷플릭스'), tx('n3b', '2026-10-15', 13500, '구독', '넷플릭스'),
+    // 통신비: 메모 없이 같은 카테고리·금액, 3달 (마지막이 지난달)
+    tx('p1', '2026-08-25', 55000, '통신'), tx('p2', '2026-09-25', 55000, '통신'), tx('p3', '2026-10-24', 55000, '통신'),
+    // 커피: 한 달에 여러 번 → 제외
+    tx('c1', '2026-09-01', 4500, '카페', '커피'), tx('c2', '2026-09-03', 4500, '카페', '커피'), tx('c3', '2026-10-01', 4500, '카페', '커피'), tx('c4', '2026-11-01', 4500, '카페', '커피'),
+    // 2달만 → 제외
+    tx('g1', '2026-10-05', 30000, '운동', '헬스'), tx('g2', '2026-11-05', 30000, '운동', '헬스'),
+    // 끊긴 것 (마지막 8월) → 제외
+    tx('o1', '2026-06-10', 9900, '구독', '음악'), tx('o2', '2026-07-10', 9900, '구독', '음악'), tx('o3', '2026-08-10', 9900, '구독', '음악'),
+    // 날짜가 들쭉날쭉 → 제외
+    tx('d1', '2026-09-01', 20000, '기타', '모임'), tx('d2', '2026-10-20', 20000, '기타', '모임'), tx('d3', '2026-11-10', 20000, '기타', '모임'),
+    // 금액 차이 큼 → 제외
+    tx('e1', '2026-09-03', 30000, '공과금', '전기'), tx('e2', '2026-10-03', 52000, '공과금', '전기'), tx('e3', '2026-11-03', 41000, '공과금', '전기'),
+    // 월급(수입)
+    tx('s1', '2026-09-25', 3000000, '월급', '급여', 'income'), tx('s2', '2026-10-25', 3000000, '월급', '급여', 'income'), tx('s3', '2026-11-25', 3000000, '월급', '급여', 'income'),
+    // 이미 반복 내역으로 등록된 것은 제외
+    tx('rec-r1-2026-09', '2026-09-01', 500000, '주거', '월세'),
+  ];
+  // 넷플릭스는 10월에 두 번 → 제외되므로, 10월 중복 하나 빼고 테스트
+  let r = detectSubscriptions(list.filter((t) => t.id !== 'n3b'), [], [], today);
+  const labels = r.map((x) => x.label);
+  assert.deepEqual(labels, ['급여', '통신', '넷플릭스'], JSON.stringify(labels));
+  const nf = r.find((x) => x.label === '넷플릭스');
+  assert.equal(nf.months, 4); assert.equal(nf.day, 15); assert.equal(nf.amount, 13500);
+  assert.equal(r.find((x) => x.label === '급여').type, 'income');
+  // 같은 달 두 번이면 제외
+  assert.ok(!detectSubscriptions(list, [], [], today).some((x) => x.label === '넷플릭스'));
+  // 무시 목록
+  r = detectSubscriptions(list.filter((t) => t.id !== 'n3b'), [], [subscriptionKey(tx('', '', 13500, '구독', '넷플릭스'))], today);
+  assert.ok(!r.some((x) => x.label === '넷플릭스'));
+  // 이미 비슷한 반복 규칙 있음
+  r = detectSubscriptions(list.filter((t) => t.id !== 'n3b'), [{ active: true, type: 'expense', category: '통신', amount: 56000, memo: '' }], [], today);
+  assert.ok(!r.some((x) => x.label === '통신'));
+  // 규칙 만들기: 형식 OK, 이번 달은 다시 안 만들고 다음 달부터
+  const rule = ruleFromSuggestion(nf, 'r-new', today);
+  assert.ok(isValidRecurring([rule]));
+  assert.deepEqual(dueMonths(rule, today), []);
+  assert.deepEqual(dueMonths(rule, new Date(2026, 11, 16)).map((x) => x.date), ['2026-12-15']);
+  console.log('subscription unit tests: all passed');
+}
