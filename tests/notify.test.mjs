@@ -145,3 +145,15 @@ for (let i = 0; i < 30; i += 1) {
   console.log('report unit tests: all passed');
 }
 console.log('notify unit tests: all passed');
+// 12. 댓글 알림
+{
+  const c = buildNotification({ table: 'tx_comments', record: { id: 'c1', user_id: 'L', tx_id: 'tx 1', author: 'u2', author_name: '준호', body: '이거 뭐 산 거야?' } });
+  assert.equal(c.kind, 'comment');
+  assert.equal(c.title, '준호님이 댓글을 남겼어요');
+  assert.equal(c.body, '이거 뭐 산 거야?');
+  assert.equal(c.url, '/?tx=tx%201');
+  assert.equal(buildNotification({ table: 'tx_comments', record: { id: 'c2', tx_id: 't', body: '  ' } }), null);
+  assert.equal(buildNotification({ table: 'tx_comments', type: 'DELETE', record: { id: 'c3', tx_id: 't', body: 'x' } }), null);
+  assert.equal(shouldSend('comment', { comment: false }), false);
+  console.log('comment unit tests: all passed');
+}

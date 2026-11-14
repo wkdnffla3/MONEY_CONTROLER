@@ -14,7 +14,7 @@ const FILTERS = [['all', '전체'], ['expense', '지출'], ['income', '수입']]
  * view: 'list' | 'calendar'. 달력에서 날짜를 고르면 그날 내역만 아래에 보여줌.
  * ym: 달력용 { y, m }. onSearch: 상세 검색 열기
  */
-export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [], view = 'list', onView, ym, day, onDay, onSearch }) {
+export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [], view = 'list', onView, ym, day, onDay, onSearch, commentCounts = {} }) {
   const { cards } = useFormData();
   const visible = useMemo(() => {
     let list = items;
@@ -112,6 +112,7 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
                         return c ? <span className="card-mark"> · 💳 {c.name}{(t.inst || 1) > 1 ? ` ${t.inst}개월` : ''}</span> : null;
                       })()}
                       {(t.tags || []).map((x) => <span key={x} className="tag-mark">#{x}</span>)}
+                      {commentCounts[t.id] ? <span className="cm-mark" title="댓글">💬 {commentCounts[t.id]}</span> : null}
                     </div>
                   </div>
                   <div className={`amt num ${isInc ? 'inc' : ''}`}>{isInc ? '+' : '-'}{won(t.amount)}</div>

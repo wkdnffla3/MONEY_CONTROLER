@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './hooks/useAuth';
-import { newId, useLedger } from './hooks/useLedger';
+import { fromItemRow, fromRow, newId, useLedger } from './hooks/useLedger';
 import { useToast } from './hooks/useToast';
 import { configError } from './lib/supabase';
 import { koError } from './lib/errors';
@@ -55,6 +55,12 @@ import { clearUserData } from './lib/outbox';
 import SharePanel from './components/SharePanel';
 import FavoritesBar from './components/FavoritesBar';
 import FavoritesManager from './components/FavoritesManager';
+import { useComments } from './hooks/useComments';
+import CommentThread from './components/CommentThread';
+import ActivityLog from './components/ActivityLog';
+import SubscriptionFinder from './components/SubscriptionFinder';
+import { detectSubscriptions, ruleFromSuggestion } from './lib/subscriptions';
+import { isValidItem, isValidTx } from './lib/outbox';
 
 // 페이지: 주소 끝이 #shopping 이면 장보기 (홈 화면 바로가기·뒤로 가기와 맞물림)
 const PAGES = ['shopping', 'report'];
@@ -78,6 +84,8 @@ export default function App() {
   const ledgerId = household.ledgerId;
   const ledger = useLedger(ledgerId, { onRemote: (n) => notifyRef.current?.(n), accountId: auth.user?.id, onForbidden: household.refresh });
   const notifier = useNotifier(auth.user?.id, ledger.members);
+  // 내역 댓글 (다른 사람이 쓴 새 댓글은 알림으로)
+  const comments = useComments(ledgerId, auth.user?.id, { onRemote: (n) => notifyRef.current?.(n) });
   notifyRef.current = notifier.notify;
   const { toast, show, hide } = useToast();
 
@@ -147,6 +155,15 @@ export default function App() {
   const serverPerson = household.personId;
   useEffect(() => { setMeId(meKey ? getMe(meKey) || serverPerson || null : null); setWho('all'); }, [meKey, serverPerson]);
 
+  // 댓글 알림으로 앱이 새로 열렸을 때(?tx=내역ID) → 그 내역 열기
+  useEffect(() => {
+    if (!uid) return;
+    const txId = new URLSearchParams(window.location.search).get('tx');
+    if (!txId || txId.length > 64) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    setSheet({ kind: 'edit', id: txId });
+  }, [uid]);
+
   // 초대 링크(?join=코드)로 열면 로그인 후 공유 화면을 코드와 함께 열기
   useEffect(() => {
     if (!uid) return;
@@ -160,7 +177,12 @@ export default function App() {
   const defaultDate = isCurrentMonth(ym) ? todayStr() : `${ym.y}-${pad(ym.m)}-01`;
 
   // 알림을 누르면 해당 페이지로 (앱 안 배너, 또는 서비스워커가 보낸 메시지)
-  const openNotified = (url) => changePage(String(url || '').includes('#shopping') ? 'shopping' : 'ledger');
+  const openNotified = (url) => {
+    const u = String(url || '');
+    const txId = new URLSearchParams(u.split('?')[1]?.split('#')[0] || '').get('tx');
+    changePage(u.includes('#shopping') ? 'shopping' : 'ledger');
+    if (txId) setSheet({ kind: 'edit', id: txId }); // 댓글 알림 → 그 내역 열기
+  };
   const openNotifiedRef = useRef(openNotified);
   openNotifiedRef.current = openNotified;
   useEffect(() => {
@@ -269,6 +291,48 @@ export default function App() {
     const fav = { id: newId().slice(0, 40), label, type: t.type, amount: t.amount, category: t.category, memo: t.memo || '',
       memberId: t.memberId ?? null, cardId: t.cardId ?? null, tags: t.tags || [] };
     saveFavorites([...ledger.favorites, fav], `"${label}" 즐겨찾기를 만들었어요`);
+  };
+
+  // ---- 구독 자동 발견 ----
+  const subSuggestions = useMemo(
+    () => detectSubscriptions(allTx, ledger.recurring, ledger.dismissedSubs),
+    [allTx, ledger.recurring, ledger.dismissedSubs],
+  );
+  const registerSubscription = (sg) => {
+    if (ledger.recurring.length >= 50) { show('반복 내역은 50개까지 만들 수 있어요'); return; }
+    const rule = ruleFromSuggestion(sg, newId().slice(0, 40));
+    notifySaved(ledger.saveSetting('recurring', [...ledger.recurring, rule]), `"${sg.label}" 반복 내역으로 등록했어요 · 다음 달 ${rule.day}일부터 자동 기록`);
+  };
+  const dismissSubscription = (sg) => notifySaved(
+    ledger.saveSetting('dismissedSubs', [...ledger.dismissedSubs.filter((k) => k !== sg.key), sg.key].slice(-100)),
+    `"${sg.label}"은(는) 다시 제안하지 않을게요`,
+  );
+
+  // ---- 댓글 ----
+  const myName = (members.find((m) => m.id === meId)?.name || (auth.user?.email || '나').split('@')[0]).slice(0, 20);
+  const addComment = (txId, body) => comments.add(txId, body, myName)
+    .catch((e) => { show(`댓글을 보내지 못했어요 · ${koError(e)}`); throw e; });
+  const deleteComment = (id) => comments.remove(id).then(() => show('댓글을 지웠어요')).catch((e) => show(`지우지 못했어요 · ${koError(e)}`));
+
+  // ---- 변경 기록에서 되살리기 / 되돌리기 ----
+  const restoreFromLog = async (e, kind) => {
+    try {
+      if (e.table_name === 'transactions') {
+        const data = fromRow(e.before);
+        if (!isValidTx(data)) { show('이 기록은 되돌릴 수 없어요'); return false; }
+        const { synced } = await ledger.saveTx(e.row_id, data);
+        show((kind === 'restore' ? '내역을 되살렸어요' : '수정 전으로 되돌렸어요') + savedSuffix(synced, navigator.onLine !== false));
+      } else {
+        const data = fromItemRow(e.before);
+        if (!isValidItem(data)) { show('이 기록은 되돌릴 수 없어요'); return false; }
+        const { synced } = await ledger.saveItem(e.row_id, data);
+        show((kind === 'restore' ? '물품을 되살렸어요' : '수정 전으로 되돌렸어요') + savedSuffix(synced, navigator.onLine !== false));
+      }
+      return true;
+    } catch (err) {
+      show(`되돌리지 못했어요 · ${koError(err)}`);
+      return false;
+    }
   };
 
   // 공통: 설정 저장 후 결과 알림
@@ -411,6 +475,7 @@ export default function App() {
             <Summary inc={totals.inc} exp={totals.exp} cmp={monthCmp} who={whoLabel} />
             <FavoritesBar favorites={ledger.favorites} onUse={applyFavorite} onManage={() => setSheet({ kind: 'favorites' })} />
             <section className="grid insights">
+              <SubscriptionFinder suggestions={subSuggestions} onRegister={registerSubscription} onDismiss={dismissSubscription} />
               <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
                 note={whoLabel ? '예산은 모두의 지출 합계 기준이에요.' : ''} />
               <CategoryDonut expenses={expenses} total={totals.exp} />
@@ -436,6 +501,7 @@ export default function App() {
               day={calDay && calDay.startsWith(ymKey(ym.y, ym.m)) ? calDay : null}
               onDay={setCalDay}
               onSearch={() => setSheet({ kind: 'search' })}
+              commentCounts={comments.counts}
             />
           </main>
 
@@ -495,6 +561,8 @@ export default function App() {
             onDelete={() => deleteTx(editing.id)}
           />
           <button type="button" className="btn fav-add-btn" onClick={() => favoriteFromTx(editing)}>⭐ 즐겨찾기에 추가</button>
+          <CommentThread comments={comments.byTx[editing.id] || []} uid={uid} supported={comments.supported} online={online}
+            onAdd={(body) => addComment(editing.id, body)} onDelete={deleteComment} />
         </Sheet>
       )}
       {sheet?.kind === 'budget' && (
@@ -546,6 +614,12 @@ export default function App() {
               if (h && personId) setMe(h.ledgerId !== uid ? `${uid}@${h.ledgerId}` : uid, personId);
               notifier.refreshPush();
             }} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'history' && (
+        <Sheet title="변경 기록" onClose={closeSheet}>
+          <ActivityLog ledgerId={ledgerId} uid={uid} people={household.people} members={members} cards={ledger.cards}
+            tx={ledger.tx} items={ledger.items} online={online} onRestore={restoreFromLog} />
         </Sheet>
       )}
       {sheet?.kind === 'favorites' && (

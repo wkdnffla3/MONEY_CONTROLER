@@ -241,6 +241,33 @@ npm run dev                  # http://localhost:5173
 3. `supabase/009_report_schedule.sql`을 열어 ① 프로젝트ID, ② 웹훅 비밀 값(`WEBHOOK_SECRET`과 같은 값) 두 곳을 바꾼 뒤 SQL Editor에서 실행해요. 값은 Vault(암호화 저장소)에 보관돼요.
 4. 바로 시험해 보기: SQL Editor에서 `select public.send_report_push('week');` → 지난주에 내역이 있으면 몇 초 안에 푸시가 와요. 결과는 Edge Functions → push-notify → Logs에서 `ledgers / sent` 숫자로 볼 수 있어요.
 
+## 변경 기록 · 내역 댓글 · 구독 자동 발견
+
+**처음 한 번:** SQL Editor에서 `supabase/010_history_comments.sql` 실행 (008 다음).
+
+### 변경 기록 (☰ → 🕘 변경 기록)
+- 내역과 장보기 물품이 추가·수정·삭제될 때마다 **DB가 자동으로 기록**해요. 앱이 기록을 빠뜨리거나, 앱에서 기록을 고치거나 지울 수 없어요.
+- "준호 · 지출 수정 · 금액 12,000원 → 15,000원"처럼 누가, 언제, 무엇을 바꿨는지 보여요.
+- 지운 내역은 **↩ 되살리기**(같은 ID로 복구), 수정한 내역은 **↩ 이전으로**로 수정 전 값으로 되돌릴 수 있어요.
+- 장바구니 담기·빼기처럼 사소한 바뀜은 목록에서 숨겨요. 기록은 최근 90일만 보관해요.
+- 인터넷에 연결돼 있을 때만 볼 수 있어요. 010을 실행한 뒤부터 기록돼요.
+
+### 내역 댓글
+- 내역을 눌러 수정 화면 아래 **💬 댓글**에 "이거 뭐 산 거야?"처럼 남겨요. 목록에는 💬 개수가 보여요.
+- 다른 사람이 댓글을 달면 앱 안 알림이 뜨고, 웹 푸시를 켠 기기에는 푸시가 가요. 누르면 그 내역이 열려요.
+- 내 댓글만 지울 수 있어요. 댓글은 고칠 수 없고, 지우고 다시 쓰면 돼요. 오프라인에서는 쓸 수 없어요.
+- **푸시까지 받으려면:** Database Webhooks에 웹훅을 하나 더 추가해요 (Table `tx_comments`, Insert, 나머지는 기존 두 개와 같음). 그리고 함수를 다시 배포해요:
+  ```bash
+  supabase functions deploy push-notify --no-verify-jwt
+  ```
+- 댓글 알림은 🔔 알림 설정에서 "내역 댓글"로 끌 수 있어요.
+
+### 구독 자동 발견
+- 넷플릭스, 통신비, 월급처럼 **매달 비슷한 날, 비슷한 금액**으로 생기는 내역을 찾아 가계부 화면에 "🔍 매달 반복되는 내역을 찾았어요" 카드로 보여줘요.
+- 조건: 최근까지 3달 이상 연속 · 한 달에 한 번 · 금액 차이 10% 이내 · 날짜 차이 6일 이내 · 아직 반복 내역에 없음.
+- **반복 등록**을 누르면 반복 내역이 만들어지고, **다음 달부터** 그 날짜에 자동으로 기록돼요. 이번 달 것은 이미 있으니 중복되지 않아요.
+- **무시**한 항목은 다시 제안하지 않아요. 공유 가계부에서는 참여자 모두에게 적용돼요.
+
 ## 알림 (다른 사람이 추가하면 알려주기)
 
 두 가지 방법이 함께 들어 있어요. **방법 1은 설정 없이 바로**, 방법 2는 아래 설정을 마친 뒤 기기마다 켜면 동작합니다.
@@ -287,7 +314,7 @@ supabase functions deploy push-notify --no-verify-jwt
 **5. Database Webhook 2개** — 대시보드 → Database → Webhooks → Create a new hook:
 | 항목 | 값 |
 |---|---|
-| Table | `transactions` (두 번째는 `shopping_items`) |
+| Table | `transactions` (두 번째는 `shopping_items`, 010 이후 세 번째는 `tx_comments`) |
 | Events | **Insert** 만 |
 | Type | Supabase Edge Functions → `push-notify`, Method `POST` |
 | HTTP Headers | `x-webhook-secret` : (4단계의 웹훅 비밀 값) |
