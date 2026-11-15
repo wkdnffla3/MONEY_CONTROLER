@@ -79,20 +79,101 @@ describe('카테고리 이름 변경', () => {
     await page.click('.sheet button[type="submit"]');
   }
 
-  test('40건 이름 변경 → 서버 요청 1번, 메모 유지, 수입·다른 가계부는 그대로', async () => {
+  test('40건 이름 변경 → 서버 함수 호출 1번(013), 메모 유지, 수입·다른 가계부는 그대로', async () => {
     const { ctx, page, errs } = await open(env, { seed });
-    const u0 = (await db(page)).updateCalls || 0;
     await rename(page, '식비', '밥값');
     await page.waitForTimeout(1200);
     const d = await db(page);
     const mine = d.transactions.filter((t) => t.id.startsWith('s'));
     assert.ok(mine.every((t) => t.category === '밥값' && t.memo === '메모' + t.id.slice(1)));
-    assert.equal((d.updateCalls || 0) - u0, 1);
+    assert.equal(d.renameCalls || 0, 1);
+    assert.equal(d.updateCalls || 0, 0);
     assert.equal(d.transactions.find((t) => t.id === 'i1').category, '식비');
     assert.equal(d.transactions.find((t) => t.id === 'x1').category, '식비');
     assert.equal((await pending(page)).length, 0);
+    assert.equal(await page.locator('.notice:has-text("DB 업데이트")').count(), 0);
     await tab(page, '내역');
     assert.ok(await page.locator('.tx:has-text("밥값")').count() >= 40);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('013 전 DB → 예전 방식(UPDATE 1번)으로 바뀌고 013 안내', async () => {
+    const { ctx, page, errs } = await open(env, { seed, init: ["sessionStorage.setItem('__no013','1')"] });
+    await rename(page, '식비', '밥값');
+    await page.waitForTimeout(1200);
+    const d = await db(page);
+    assert.ok(d.transactions.filter((t) => t.id.startsWith('s')).every((t) => t.category === '밥값'));
+    assert.equal(d.updateCalls || 0, 1);
+    assert.equal((await pending(page)).length, 0);
+    assert.match(await page.innerText('.notice:has-text("DB 업데이트")'), /013_\*\.sql/);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('두 카테고리 이름 맞바꾸기(식비↔교통) → 내역이 섞이지 않고 서로 바뀜', async () => {
+    const swapSeed = seedScript({ transactions: [
+      ...Array.from({ length: 5 }, (_, i) => tx('f' + i, { category: '식비', memo: '밥' + i, created_at: i })),
+      ...Array.from({ length: 3 }, (_, i) => tx('b' + i, { category: '교통', memo: '버스' + i, created_at: 10 + i })),
+    ] });
+    for (const offline of [false, true]) {
+      const { ctx, page, errs } = await open(env, { seed: swapSeed });
+      if (offline) await ctx.setOffline(true);
+      await menu(page, '카테고리 편집');
+      const names = page.locator('.sheet input[aria-label="이름"]');
+      for (let i = 0; i < await names.count(); i++) {
+        const v = await names.nth(i).inputValue();
+        if (v === '식비') await names.nth(i).fill('교통');
+        else if (v === '교통') await names.nth(i).fill('식비');
+      }
+      await page.click('.sheet button[type="submit"]');
+      await page.waitForTimeout(500);
+      await tab(page, '내역');
+      const shown = async (memo) => norm(await page.locator(`.tx:has-text("${memo}")`).first().innerText());
+      assert.match(await shown('밥0'), /교통/, `화면 (offline=${offline})`);
+      assert.match(await shown('버스0'), /식비/, `화면 (offline=${offline})`);
+      if (offline) { await ctx.setOffline(false); }
+      await page.waitForTimeout(2500);
+      const d = await db(page);
+      const cat = (pre) => [...new Set(d.transactions.filter((t) => t.id.startsWith(pre)).map((t) => t.category))];
+      assert.deepEqual(cat('f'), ['교통'], `서버 (offline=${offline})`);
+      assert.deepEqual(cat('b'), ['식비'], `서버 (offline=${offline})`);
+      assert.ok(!d.transactions.some((t) => t.category.startsWith('~')));
+      assert.equal((await pending(page)).length, 0);
+      assert.deepEqual(errs, []);
+      await ctx.close();
+    }
+  });
+
+  test('지운 카테고리 이름(📦 옛 내역)으로 바꾸면 합쳐짐 확인 → "합쳐서 저장"을 눌러야 저장', async () => {
+    const mergeSeed = seedScript({ transactions: [
+      tx('m1', { category: '식비', memo: '밥' }),
+      tx('o1', { category: '카페', memo: '옛카페1' }), tx('o2', { category: '카페', memo: '옛카페2' }), // 예전에 지운 카테고리
+    ] });
+    const { ctx, page, errs } = await open(env, { seed: mergeSeed });
+    await menu(page, '카테고리 편집');
+    const names = page.locator('.sheet input[aria-label="이름"]');
+    for (let i = 0; i < await names.count(); i++) {
+      if (await names.nth(i).inputValue() === '식비') { await names.nth(i).fill('카페'); break; }
+    }
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(300);
+    const warn = norm(await page.innerText('.merge-warn'));
+    assert.ok(warn.includes('‘카페’') && warn.includes('2건'), warn);
+    assert.equal(norm(await page.innerText('.sheet button[type="submit"]')), '합쳐서 저장');
+    assert.equal((await db(page)).transactions.find((t) => t.id === 'm1').category, '식비'); // 아직 저장 안 됨
+    // 이름을 고치면 확인이 사라짐
+    for (let i = 0; i < await names.count(); i++) {
+      if (await names.nth(i).inputValue() === '카페') { await names.nth(i).fill('카페2'); break; }
+    }
+    assert.equal(await page.locator('.merge-warn').count(), 0);
+    for (let i = 0; i < await names.count(); i++) {
+      if (await names.nth(i).inputValue() === '카페2') { await names.nth(i).fill('카페'); break; }
+    }
+    await page.click('.sheet button[type="submit"]');
+    await page.click('.sheet button:has-text("합쳐서 저장")');
+    await page.waitForTimeout(1200);
+    assert.equal((await db(page)).transactions.find((t) => t.id === 'm1').category, '카페');
     assert.deepEqual(errs, []);
     await ctx.close();
   });
