@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { coalesce, applyQueue, removeOp, isRetryable, isValidOp, isValidTx, isValidMembers, isSchemaError } from '../../src/lib/outbox.js';
+import { coalesce, applyQueue, removeOp, renameOps, isRetryable, isValidOp, isValidTx, isValidMembers, isSchemaError } from '../../src/lib/outbox.js';
 import { summarizeByMember, filterByOwner, sharePercents, SHARED } from '../../src/lib/members.js';
 let q = [];
 const up = (id, memo, opId) => ({ opId, kind: 'upsert', id, data: { memo } });
@@ -95,5 +95,30 @@ assert.equal(S.rows.reduce((a, r) => a + r.pct, 0), 100);
   // 이름 변경 전에 넣어 둔 내역 수정도 바뀐 이름으로 보임
   const v2 = applyQueue({ tx: {} }, [{ opId: 'u', kind: 'upsert', id: 'n1', data: { type: 'expense', category: '가', amount: 5 } }, r('c', 'expense', '가', '나')]);
   assert.equal(v2.tx.n1.category, '나');
+}
+// 이름 변경 순서: 맞바꾸기·이어 바꾸기는 임시 이름을 거쳐 두 단계로 (그대로 보내면 한쪽으로 합쳐짐)
+{
+  let k = 0; const id = () => `id${k++}`;
+  const base = { tx: { a: { type: 'expense', category: '식비' }, b: { type: 'expense', category: '교통' }, c: { type: 'expense', category: '쇼핑' }, i: { type: 'income', category: '식비' } } };
+  const cats = (v) => Object.fromEntries(Object.entries(v.tx).map(([key, t]) => [key, t.category]));
+  // 단순 변경: 그대로 1개
+  let ops = renameOps([{ type: 'expense', from: '식비', to: '밥값' }, { type: 'expense', from: '쇼핑', to: '쇼핑' }], id);
+  assert.equal(ops.length, 1);
+  assert.deepEqual(cats(applyQueue(base, ops)), { a: '밥값', b: '교통', c: '쇼핑', i: '식비' });
+  // 맞바꾸기
+  ops = renameOps([{ type: 'expense', from: '식비', to: '교통' }, { type: 'expense', from: '교통', to: '식비' }], id);
+  assert.equal(ops.length, 4);
+  assert.ok(ops.every((o) => isValidOp(o)), JSON.stringify(ops));
+  assert.deepEqual(cats(applyQueue(base, ops)), { a: '교통', b: '식비', c: '쇼핑', i: '식비' });
+  // 이어 바꾸기 (교통→버스, 식비→교통)
+  ops = renameOps([{ type: 'expense', from: '식비', to: '교통' }, { type: 'expense', from: '교통', to: '버스' }], id);
+  assert.deepEqual(cats(applyQueue(base, ops)), { a: '교통', b: '버스', c: '쇼핑', i: '식비' });
+  // 세 개 돌리기
+  ops = renameOps([{ type: 'expense', from: '식비', to: '교통' }, { type: 'expense', from: '교통', to: '쇼핑' }, { type: 'expense', from: '쇼핑', to: '식비' }], id);
+  assert.deepEqual(cats(applyQueue(base, ops)), { a: '교통', b: '쇼핑', c: '식비', i: '식비' });
+  // 종류가 다르면 이어진 게 아님 (수입 식비 → 교통 + 지출 교통 → 식비)
+  ops = renameOps([{ type: 'income', from: '식비', to: '교통' }, { type: 'expense', from: '교통', to: '식비' }], id);
+  assert.equal(ops.length, 2);
+  assert.ok(ops.flatMap((o) => [o.from, o.to]).every((n) => n.length <= 20));
 }
 console.log('outbox unit tests: all passed');

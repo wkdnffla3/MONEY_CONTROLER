@@ -2,6 +2,7 @@
 // 실제 발송은 Supabase Edge Function(supabase/functions/push-notify)이 함.
 import { supabase } from './supabase';
 import { getDeviceId } from './device';
+import { isPushEndpoint } from '../../supabase/functions/_shared/notifyMessage.js';
 import { isIOS, isStandalone } from './pwa';
 
 const VAPID_KEY = (import.meta.env.VITE_VAPID_PUBLIC_KEY || '').trim();
@@ -57,6 +58,10 @@ export async function enablePush(prefs, ledgerId) {
   if (old) await old.unsubscribe().catch(() => {});
   const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(VAPID_KEY) });
   const json = sub.toJSON();
+  if (!isPushEndpoint(json.endpoint)) {
+    await sub.unsubscribe().catch(() => {});
+    throw new Error('이 브라우저의 푸시 서비스는 지원하지 않아요. 크롬·엣지·파이어폭스·사파리에서 켜 주세요');
+  }
   const deviceId = getDeviceId();
   try {
     // 이 기기의 예전 줄 정리 후 등록

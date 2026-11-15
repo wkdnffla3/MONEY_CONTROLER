@@ -25,7 +25,7 @@ await import(pathToFileURL(out).href);
 const call = (body, secret = 's3cret', method = 'POST') => handler(new Request('http://x/', { method, headers: secret ? { 'x-webhook-secret': secret } : {}, body: method === 'POST' ? JSON.stringify(body) : undefined })).then(async (r) => ({ status: r.status, body: await r.json() }));
 const L = 'ledger-a', L2 = 'ledger-b';
 db.settings.push({ user_id: L, members: [{ id: 'm1', name: '민지', color: 0 }], budget: 400000 });
-const sub = (id, ledger, dev, prefs = {}) => ({ id, user_id: ledger, device_id: dev, endpoint: `https://push/${id}`, p256dh: 'p', auth: 'a', prefs });
+const sub = (id, ledger, dev, prefs = {}) => ({ id, user_id: ledger, device_id: dev, endpoint: `https://fcm.googleapis.com/fcm/send/${id}`, p256dh: 'p', auth: 'a', prefs });
 db.push_subscriptions.push(sub('s1', L, 'dev1'), sub('s2', L, 'dev2'), sub('s3', L, 'dev3', { tx: false }), sub('gone1', L, 'dev4'), sub('s5', L2, 'dev5'));
 const rec = { id: 't1', user_id: L, type: 'expense', amount: 12000, category: '식비', memo: '점심', member_id: 'm1', device_id: 'dev1' };
 
@@ -41,7 +41,7 @@ let r = await call({ type: 'INSERT', table: 'transactions', record: rec });
 assert.equal(r.status, 200);
 assert.deepEqual(r.body, { sent: 1, skipped: 2, removed: 1 });
 assert.equal(sent.length, 1);
-assert.equal(sent[0].endpoint, 'https://push/s2');
+assert.equal(sent[0].endpoint, 'https://fcm.googleapis.com/fcm/send/s2');
 assert.equal(sent[0].msg.title, '민지님이 지출을 추가했어요');
 assert.equal(sent[0].msg.body, '식비 12,000원 · 점심');
 assert.ok(!db.push_subscriptions.some((s) => s.id === 'gone1'));
@@ -96,9 +96,22 @@ sent.length = 0;
 db.push_subscriptions.forEach((x) => { x.account_id = x.id === 's1' || x.id === 's2' ? 'acct-writer' : 'acct-other'; });
 r = await call({ type: 'INSERT', table: 'tx_comments', record: { id: 'c1', user_id: L, tx_id: 't1', author: 'acct-writer', author_name: '준호', body: '이거 뭐야?' } });
 assert.equal(r.status, 200);
-assert.ok(sent.every((x) => !['https://push/s1', 'https://push/s2'].includes(x.endpoint)), JSON.stringify(sent.map((x) => x.endpoint)));
+assert.ok(sent.every((x) => !['https://fcm.googleapis.com/fcm/send/s1', 'https://fcm.googleapis.com/fcm/send/s2'].includes(x.endpoint)), JSON.stringify(sent.map((x) => x.endpoint)));
 assert.ok(sent.length >= 1);
 assert.equal(sent[0].msg.title, '준호님이 댓글을 남겼어요');
 assert.equal(sent[0].msg.url, '/?tx=t1');
 console.log('ok 8. 댓글: 쓴 사람 계정의 기기 모두 제외 →', JSON.stringify(r.body));
+// 실제 푸시 서비스가 아닌 주소: 보내지 않고 지움 (012 이전에 저장됐거나 조작된 값)
+sent.length = 0;
+for (const [id, endpoint] of [['evil1', 'https://attacker.example/collect'], ['evil2', 'https://fcm.googleapis.com.evil.io/x'], ['evil3', 'http://fcm.googleapis.com/fcm/send/x'], ['evil4', 'https://169.254.169.254/latest']]) {
+  db.push_subscriptions.push({ ...sub(id, L, 'dev-' + id), endpoint, account_id: 'acct-other' });
+}
+db.push_subscriptions.push({ ...sub('apple1', L, 'dev-apple'), endpoint: 'https://web.push.apple.com/QGuQ', account_id: 'acct-other' });
+r = await call({ type: 'INSERT', table: 'transactions', record: { ...rec, id: 't9' } });
+assert.equal(r.status, 200);
+assert.ok(sent.every((x) => !/attacker|evil|169\.254|^http:/.test(x.endpoint)), JSON.stringify(sent.map((x) => x.endpoint)));
+assert.ok(sent.some((x) => x.endpoint.startsWith('https://web.push.apple.com/')));
+assert.ok(!db.push_subscriptions.some((x) => x.id.startsWith('evil')));
+assert.equal(r.body.removed, 4);
+console.log('ok 9. 푸시 서비스가 아닌 주소는 보내지 않고 삭제 →', JSON.stringify(r.body));
 console.log('edge function tests: all passed');

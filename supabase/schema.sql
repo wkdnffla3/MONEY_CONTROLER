@@ -472,3 +472,74 @@ alter table public.settings add  constraint settings_favorites_valid
   check (jsonb_typeof(favorites) = 'array' and jsonb_array_length(favorites) <= 20 and pg_column_size(favorites) <= 16384);
 
 notify pgrst, 'reload schema';
+
+-- ===== 012: 웹 푸시 주소 제한 (supabase/012_push_endpoint_hosts.sql 과 같은 내용) =====
+-- 푸시 주소는 실제 브라우저 푸시 서비스로만 (그 외 주소로 서버가 요청을 보내지 않게)
+--   구글 FCM(크롬·삼성 인터넷·오페라 등), 모질라(파이어폭스), 마이크로소프트 WNS(엣지), 애플(사파리·아이폰)
+--   목록 출처: https://github.com/pushpad/known-push-services
+create or replace function public.is_push_endpoint(p text) returns boolean
+language sql immutable set search_path = '' as $$
+  select p ~* '^https://(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|([a-z0-9-]+\.)+notify\.windows\.com|([a-z0-9-]+\.)+push\.apple\.com)(:443)?/'
+$$;
+-- 이미 저장된 엉뚱한 주소는 지움 (정상 기기는 영향 없음)
+delete from public.push_subscriptions where not public.is_push_endpoint(endpoint);
+alter table public.push_subscriptions drop constraint if exists push_subscriptions_endpoint_host;
+alter table public.push_subscriptions add  constraint push_subscriptions_endpoint_host check (public.is_push_endpoint(endpoint));
+
+notify pgrst, 'reload schema';
+
+-- ===== 013: 카테고리 이름 일괄 변경 (supabase/013_rename_category.sql 과 같은 내용) =====
+-- 1. 변경 기록 트리거: 카테고리 이름 일괄 변경(아래 함수)이 바꾸는 줄은 기록하지 않음.
+--    함수 안에서만 켜지는 표시(ledger.skip_log)가 있고, 바뀐 칸이 카테고리 하나뿐일 때만 건너뜀
+--    → 내역을 열어 카테고리를 바꾸는 한 건 수정은 지금처럼 기록됨
+create or replace function public.log_activity() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  b jsonb := case when tg_op in ('UPDATE', 'DELETE') then to_jsonb(old) - 'device_id' - 'user_id' else null end;
+  a jsonb := case when tg_op in ('INSERT', 'UPDATE') then to_jsonb(new) - 'device_id' - 'user_id' else null end;
+  lid uuid := case when tg_op = 'DELETE' then old.user_id else new.user_id end;
+begin
+  -- 같은 내용 다시 저장(재전송 등)은 기록하지 않음
+  if tg_op = 'UPDATE' and b = a then return null; end if;
+  -- 카테고리 이름 일괄 변경 (rename_category 안에서만)
+  if tg_op = 'UPDATE' and tg_table_name = 'transactions'
+     and current_setting('ledger.skip_log', true) = 'on'
+     and (b - 'category') = (a - 'category') then
+    return null;
+  end if;
+  -- 계정 삭제로 가계부가 통째로 지워지는 중이면 기록하지 않음 (기록도 함께 지워짐)
+  if not exists (select 1 from auth.users where id = lid) then return null; end if;
+  insert into public.activity_log (user_id, actor, table_name, row_id, action, before, after)
+  values (lid, auth.uid(), tg_table_name, coalesce(new.id, old.id), lower(tg_op), b, a);
+  -- 가끔 90일 지난 기록 정리
+  if random() < 0.02 then
+    delete from public.activity_log where user_id = lid and created_at < now() - interval '90 days';
+  end if;
+  return null;
+end $$;
+revoke all on function public.log_activity() from public, anon, authenticated;
+
+-- 2. 카테고리 이름 일괄 변경: 이 가계부에서 그 이름을 쓰는 내역을 한 번에 바꾸고 바뀐 건수를 돌려줌.
+--    호출한 사람 권한으로 실행(security invoker) → RLS 그대로, 내 가계부(공유 중이면 공유 가계부)만 바뀜.
+--    다시 호출해도 이미 바뀐 뒤라 0건 (재전송에 안전)
+create or replace function public.rename_category(p_type text, p_from text, p_to text) returns integer
+language plpgsql security invoker set search_path = public as $$
+declare n integer;
+begin
+  if auth.uid() is null then raise exception 'not_signed_in' using errcode = '42501'; end if;
+  if p_type is null or p_type not in ('expense', 'income') then raise exception 'bad_type' using errcode = '22023'; end if;
+  if p_from is null or p_to is null or p_from = p_to
+     or char_length(p_from) not between 1 and 20 or char_length(p_to) not between 1 and 20 then
+    raise exception 'bad_name' using errcode = '22023';
+  end if;
+  perform set_config('ledger.skip_log', 'on', true);
+  update public.transactions set category = p_to
+   where user_id = public.current_ledger() and type = p_type and category = p_from;
+  get diagnostics n = row_count;
+  perform set_config('ledger.skip_log', 'off', true);
+  return n;
+end $$;
+revoke all on function public.rename_category(text, text, text) from public, anon;
+grant execute on function public.rename_category(text, text, text) to authenticated;
+
+notify pgrst, 'reload schema';

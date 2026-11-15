@@ -107,16 +107,16 @@ reset role;
 
 -- 푸시 구독: 기기 주인만 관리, 참여·나가기에 따라 가계부 이동
 select pg_temp.as_user(:'C');
-insert into push_subscriptions(device_id, endpoint, p256dh, auth, user_id) values ('dc','https://push/c','p','a',:'C');
+insert into push_subscriptions(device_id, endpoint, p256dh, auth, user_id) values ('dc','https://fcm.googleapis.com/fcm/send/c','p','a',:'C');
 reset role;
 select pg_temp.as_user(:'A');
 select (create_invite())->>'code' as code5 \gset
-insert into push_subscriptions(device_id, endpoint, p256dh, auth, user_id) values ('da','https://push/a','p','a',:'A');
+insert into push_subscriptions(device_id, endpoint, p256dh, auth, user_id) values ('da','https://fcm.googleapis.com/fcm/send/a','p','a',:'A');
 reset role;
 select pg_temp.as_user(:'C');
 select join_ledger(:'code5') ;
 select pg_temp.chk('23. 참여하면 내 기기 푸시가 공유 가계부로 옮겨짐', (select user_id::text from push_subscriptions)=:'A' and (select count(*) from push_subscriptions)=1);
-do $$ begin begin insert into push_subscriptions(device_id, endpoint, p256dh, auth, user_id) values ('x','https://push/x','p','a','00000000-0000-0000-0000-00000000000c');
+do $$ begin begin insert into push_subscriptions(device_id, endpoint, p256dh, auth, user_id) values ('x','https://fcm.googleapis.com/fcm/send/x','p','a','00000000-0000-0000-0000-00000000000c');
   perform pg_temp.chk('24. 다른 가계부로 구독 등록 차단', false); exception when insufficient_privilege then perform pg_temp.chk('24. 다른 가계부로 구독 등록 차단', true); end; end $$;
 select pg_temp.chk('25. 같은 가계부라도 다른 계정 기기 구독은 안 보임', (select count(*) from push_subscriptions where device_id='da')=0);
 select leave_ledger();

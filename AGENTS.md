@@ -44,7 +44,7 @@ src/
 public/sw.js             서비스워커: 화면 network-first, 빌드 파일 cache-first(설치 때 나뉜 화면 파일까지 import를 따라가 모두 저장), push / notificationclick
 src/lib/lazyScreens.js   첫 화면에 필요 없는 화면 목록(React.lazy) + 한가할 때 미리 받기
 src/components/ScreenBoundary.jsx  나뉜 화면 불러오는 중 표시 / 실패 시 "새 버전·새로고침" 안내
-supabase/schema.sql      새 프로젝트용 전체 스키마 (002~011 내용 포함)
+supabase/schema.sql      새 프로젝트용 전체 스키마 (002~013 내용 포함)
 supabase/00N_*.sql       기존 DB용 업데이트 (번호 순서대로, 여러 번 실행해도 안전하게 작성)
 supabase/functions/push-notify/index.ts   웹 푸시 발송 Edge Function (Deno)
 supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과 함수가 같은 파일을 import
@@ -57,7 +57,9 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 - **ID는 클라이언트가 만든다** → 같은 작업을 여러 번 보내도 upsert라 서버에 한 줄만 남는다.
 - 고정 ID 규칙: 반복 내역 `rec-<규칙ID>-<YYYY-MM>`, 장보기 결제 `shop-<구매ID>` 또는 `shop-<물품ID>`. 이 접두어는 알림·변경 기록·구독 발견에서 구분하는 데도 쓰인다.
 - 같은 대상에 대한 작업은 목록에서 합쳐진다(`coalesce`). 단 카테고리 이름 변경(`renameCat`)은 순서대로 모두 실행돼야 해서 합치지 않는다.
-- 카테고리 이름 변경은 내역마다 보내지 않고 `renameCat` 작업 하나 → 서버 `update ... where user_id·type·category` 한 번. 아직 못 보낸 내역 저장도 새 이름으로 고쳐 둔다.
+- 카테고리 이름 변경은 내역마다 보내지 않고 `renameCat` 작업 하나 → 013 이후 DB 함수 `rename_category`(변경 기록에 내역마다 남기지 않음), 013 전이면 `update ... where user_id·type·category` 한 번 + 013 안내. 아직 못 보낸 내역 저장도 새 이름으로 고쳐 둔다.
+- 맞바꾸기·이어 바꾸기(식비↔교통, 교통→버스+식비→교통)는 순서대로 실행하면 합쳐지므로 `renameOps`(outbox.js)가 임시 이름(`~임시N-…`)을 거쳐 두 단계로 만든다.
+- 새 이름이 지운 카테고리의 옛 내역(📦) 이름과 같으면 합쳐져 나눌 수 없으므로 `CategoryEditor`가 "합쳐서 저장" 확인을 받는다.
 - 실시간 변경이 한꺼번에 와도 다시 불러오기는 400ms 모아서 한 번만 한다. 탭이 여러 개면 `navigator.locks`로 한 탭만 전송한다.
 - 일시적 오류(네트워크, 타임아웃 10초, 권한 오류 42501)는 3/10/30/60초 간격으로 재시도하고, 영구 오류만 목록에서 빼고 알린다.
 - 기기 저장소에서 읽는 값은 손상·조작될 수 있으므로 항상 `isValid*`로 검사한다.
@@ -114,17 +116,19 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 009_report_schedule | 리포트 예약 (선택, 프로젝트ID·비밀 값을 채워서 실행) | 008, 함수 배포 |
 | 010_history_comments | `activity_log` 트리거, `tx_comments`, `dismissed_subs` | 008 |
 | 011_memo_200 | 메모 200자, 반복·즐겨찾기 설정 크기 한도 상향 (예전 설치마다 다른 제약 이름을 정의로 찾아 교체) | 008 |
+| 013_rename_category | `rename_category(type, from, to)` 이름 일괄 변경(security invoker, 바뀐 건수 반환). 그 안에서만 `ledger.skip_log`를 켜서 `log_activity`가 카테고리만 바뀐 줄을 기록하지 않음 | 010 |
+| 012_push_endpoint_hosts | 푸시 주소를 실제 푸시 서비스(FCM·모질라·WNS·애플)로만 제한 `is_push_endpoint`. 앱(`push.js`)·Edge Function도 같은 규칙(`isPushEndpoint`, `_shared/notifyMessage.js`). 앱은 012 없이도 동작 | 007 |
 
 규칙: 새 파일은 **여러 번 실행해도 안전하게**(`if not exists`, `drop … if exists` 후 생성), 끝에 `notify pgrst, 'reload schema';`, 같은 내용을 `schema.sql` 끝에도 붙인다.
 
 ## 7. 테스트
 
-자세한 내용: `tests/README.md`. 실제 Supabase·비밀 키는 쓰지 않는다. GitHub Actions(`.github/workflows/test.yml`)가 push·PR마다 실행한다.
+자세한 내용: `tests/README.md`. 패키지 업데이트는 Dependabot(`.github/dependabot.yml`)이 매주 PR로 올린다. 실제 Supabase·비밀 키는 쓰지 않는다. GitHub Actions(`.github/workflows/test.yml`)가 push·PR마다 실행한다.
 
 - `tests/unit`: 순수 함수.
 - `tests/edge`: Edge Function을 esbuild로 묶어 Node에서 가짜 web-push·DB로 실행.
 - `tests/e2e`: `src/`를 esbuild로 묶되 `@supabase/supabase-js`만 `fake-supabase.js`로 바꾼 앱을 Playwright(크로미움)로 조작. 화면 구성, 메모·링크·자정, 오프라인·재전송·중복 방지, 카테고리 이름 변경, 011 전 DB 보관, 공유 참여, 댓글, 변경 기록·되살리기, 서비스 워커 오프라인.
-- `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·리포트 예약.
+- `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·푸시 주소 제한(012)·이름 일괄 변경(013)·리포트 예약.
 - 바꿀 때 같이 고칠 것: 새 DB 칸·테이블 → `fake-supabase.js`의 `MISSING`/`tableMissing`와 SQL 테스트. 화면 문구·클래스 이름 → e2e 선택자. 새 마이그레이션 → `run.mjs`의 `SUITES`.
 - **아직 실제 Supabase 클라우드 위에서의 통합 점검은 자동화하지 않았다.** 크게 바꾼 뒤에는 통합 점검 체크리스트(계정 두 개로 공유·댓글·푸시·오프라인 입력)를 직접 확인하길 권한다.
 

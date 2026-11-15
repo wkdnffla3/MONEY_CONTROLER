@@ -314,3 +314,17 @@ export function isRetryable(err) {
   }
   return true;
 }
+
+/**
+ * 이름 변경 작업 목록. 서버·화면 모두 순서대로 하나씩 적용하므로,
+ * 맞바꾸기(식비↔간식)나 이어 바꾸기(간식→군것질, 식비→간식)는 그대로 보내면 내역이 한쪽으로 합쳐짐
+ * → 그런 경우엔 모두 임시 이름으로 옮긴 뒤 최종 이름으로 (두 단계)
+ */
+export function renameOps(renames, makeId = newId) {
+  const real = renames.filter((r) => r.from && r.to && r.from !== r.to);
+  const op = (type, from, to) => ({ opId: makeId(), kind: 'renameCat', type, from, to });
+  const chained = real.some((r) => real.some((x) => x !== r && x.type === r.type && x.from === r.to));
+  if (!chained) return real.map((r) => op(r.type, r.from, r.to));
+  const tmp = real.map((r, i) => ({ ...r, tmp: `~임시${i}-${makeId().replace(/[^A-Za-z0-9]/g, '').slice(0, 6)}` }));
+  return [...tmp.map((r) => op(r.type, r.from, r.tmp)), ...tmp.map((r) => op(r.type, r.tmp, r.to))];
+}
