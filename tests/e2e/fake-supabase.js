@@ -69,6 +69,11 @@ let session={user:{id:UID(),email:EMAILS[UID()],identities:[{}]}}; const subs=ne
 const fnErr=(m)=>({data:null,error:{code:'P0001',message:m}});
 const noFn=(fn)=>({data:null,error:{code:'PGRST202',message:`Could not find the function public.${fn} in the schema cache`}});
 const RPC={
+  // 013 카테고리 이름 일괄 변경 (sessionStorage '__no013' 이면 013 전: 함수 없음)
+  rename_category(db,{p_type,p_from,p_to}){ if(sessionStorage.getItem('__no013')) return noFn('rename_category');
+    const lid=ledgerOf(db,UID()); let n=0; db.writes++; db.renameCalls=(db.renameCalls||0)+1;
+    db.transactions=db.transactions.map(r=>rowLedger(r)===lid&&r.type===p_type&&r.category===p_from?(n++,{...r,category:p_to}):r);
+    return {data:n,error:null}; },
   my_ledger(db){ const me=UID(), lid=ledgerOf(db,me); const m=db.ledger_members.find(x=>x.user_id===me);
     return {data:{ledger_id:lid, is_owner:lid===me, person_id:m?m.person_id:null,
       people:[{user_id:lid,email:EMAILS[lid],owner:true,person_id:null}, ...db.ledger_members.filter(x=>x.ledger_id===lid).map(x=>({user_id:x.user_id,email:EMAILS[x.user_id],owner:false,person_id:x.person_id}))]},error:null}; },

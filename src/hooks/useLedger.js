@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRemember, supabase } from '../lib/supabase';
 import {
-  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isMemoLimitError, isRetryable, isSchemaError, newId, queueStorageKey, readCache,
+  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isMemoLimitError, isRetryable, isSchemaError, newId, queueStorageKey, renameOps, readCache,
   readQueue, removeOp, sameTarget, sanitizeSetting, writeCache, writeQueue,
 } from '../lib/outbox';
 import { planRecurring, ymOf } from '../lib/recurring';
 import { planPurchase } from '../lib/shopping';
 import { useOnline } from './useOnline';
 import { getDeviceId, isOwn, markOwn } from '../lib/device';
+import { isMissingFn } from '../lib/household';
 
 export { newId };
 
@@ -126,6 +127,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   const onForbiddenRef = useRef(onForbidden);
   onForbiddenRef.current = onForbidden;
   const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
+  const renameFnRef = useRef(true);     // 013(rename_category 함수) 있는지. 없다고 확인되면 false
   const memoBlockedRef = useRef(false); // 긴 메모가 예전 DB 제한에 걸려 보관 중인지 (011 안내)
   const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
   const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트 필요
@@ -230,6 +232,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       noItemsTable ? '005' : null,
       noDeviceCol ? '007' : null,
       memoBlockedRef.current ? '011' : null,
+      renameFnRef.current ? null : '013',
     ].filter(Boolean).sort()[0] || null;
     if (noDeviceCol) deviceColRef.current = false;
     setSchemaNeed(need);
@@ -259,9 +262,21 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data, deviceColRef.current && getDeviceId()));
       else if (op.kind === 'itemDel') req = supabase.from('shopping_items').delete().eq('id', op.id);
       // 카테고리 이름 변경: 이 가계부에서 그 이름을 쓰는 내역을 서버가 한 번에 바꿈 (요청 1번, 다른 칸은 그대로)
-      // 다시 보내도 이미 바뀐 뒤라 아무 일도 없어서 안전
-      else if (op.kind === 'renameCat') req = supabase.from('transactions').update({ category: op.to })
-        .eq('user_id', userId).eq('type', op.type).eq('category', op.from);
+      // 다시 보내도 이미 바뀐 뒤라 아무 일도 없어서 안전.
+      // 013 이후: DB 함수 rename_category → 변경 기록에 내역마다 남기지 않아 빠름.
+      // 013 전(함수 없음): 예전처럼 직접 UPDATE 하고 업데이트 안내
+      else if (op.kind === 'renameCat') {
+        if (renameFnRef.current) {
+          const r = await withTimeout(Promise.resolve(
+            supabase.rpc('rename_category', { p_type: op.type, p_from: op.from, p_to: op.to })), SEND_TIMEOUT_MS);
+          if (!isMissingFn(r.error)) return r;
+          renameFnRef.current = false;
+          setSchemaNeed((n) => (!n || n > '013' ? '013' : n));
+          setSchemaOutdated(true);
+        }
+        req = supabase.from('transactions').update({ category: op.to })
+          .eq('user_id', userId).eq('type', op.type).eq('category', op.from);
+      }
       else if (SETTINGS[op.kind]) req = supabase.from('settings').upsert({ user_id: userId, [SETTINGS[op.kind].column]: op.value });
       else return { error: null };
       // 응답이 끝없이 안 오면(불안정한 와이파이 등) 전송 전체가 멈추지 않도록 제한 시간을 둠
@@ -528,9 +543,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     const ops = [{ opId: newId(), kind: 'categories', value: categories }];
     if (renames.length) {
       const map = (type, name) => renames.find((r) => r.type === type && r.from === name)?.to ?? name;
-      for (const r of renames) {
-        if (r.from !== r.to) ops.push({ opId: newId(), kind: 'renameCat', type: r.type, from: r.from, to: r.to });
-      }
+      ops.push(...renameOps(renames));
       // 아직 못 보낸 내역 저장도 새 이름으로 고쳐 둠 (먼저 못 보내고 나중에 올라가도 옛 이름으로 되돌리지 않게)
       setQ(getQ().map((o) => {
         if (o.kind !== 'upsert') return o;

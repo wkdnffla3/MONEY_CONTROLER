@@ -207,3 +207,13 @@ export function buildReport({ period, range, txs = [], budget = 0 }) {
     url: isWeek ? '/' : '/#report',
   };
 }
+
+// ===== 푸시 주소 검사 =====
+// 실제 브라우저 푸시 서비스 주소만 허용 (DB 의 public.is_push_endpoint 와 같은 규칙, 012).
+// 구글 FCM(크롬 등), 모질라(파이어폭스), 마이크로소프트 WNS(엣지), 애플(사파리·아이폰)
+// 출처: https://github.com/pushpad/known-push-services
+export const PUSH_ENDPOINT_RE =
+  /^https:\/\/(fcm\.googleapis\.com|android\.googleapis\.com|updates\.push\.services\.mozilla\.com|([a-z0-9-]+\.)+notify\.windows\.com|([a-z0-9-]+\.)+push\.apple\.com)(:443)?\//i;
+export function isPushEndpoint(url) {
+  return typeof url === 'string' && url.length <= 1024 && PUSH_ENDPOINT_RE.test(url);
+}

@@ -10,7 +10,7 @@
 // 배포: supabase functions deploy push-notify --no-verify-jwt   (대신 WEBHOOK_SECRET 헤더로 확인)
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { buildNotification, buildReport, reportRange, shouldSend } from '../_shared/notifyMessage.js';
+import { buildNotification, buildReport, reportRange, shouldSend, isPushEndpoint } from '../_shared/notifyMessage.js';
 
 const env = (k: string) => (Deno.env.get(k) || '').trim();
 const VAPID_PUBLIC_KEY = env('VAPID_PUBLIC_KEY');
@@ -82,6 +82,12 @@ async function pushTo(subs: Sub[], note: Note, exclude: (s: Sub) => boolean = ()
   const now = new Date();
   let sent = 0, skipped = 0, removed = 0;
   await Promise.all(subs.map(async (s) => {
+    // 실제 푸시 서비스가 아닌 주소(012 이전에 저장됐거나 조작된 값)는 보내지 않고 지움
+    if (!isPushEndpoint(s.endpoint)) {
+      await admin.from('push_subscriptions').delete().eq('id', s.id);
+      removed += 1;
+      return;
+    }
     if (exclude(s) || !shouldSend(note.kind, s.prefs, now)) { skipped += 1; return; }
     try {
       await webpush.sendNotification(

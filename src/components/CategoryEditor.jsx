@@ -19,13 +19,19 @@ export default function CategoryEditor({ counts, onSave }) {
   const [newName, setNewName] = useState('');
   const [newIcon, setNewIcon] = useState('🏷️');
   const [error, setError] = useState('');
+  const [mergeAsk, setMergeAsk] = useState(false); // 옛 내역과 합쳐지는 것 확인 중
 
   const list = draft[type];
-  const setList = (fn) => { setDraft((d) => ({ ...d, [type]: fn(d[type]) })); setError(''); };
+  const setList = (fn) => { setDraft((d) => ({ ...d, [type]: fn(d[type]) })); setError(''); setMergeAsk(false); };
 
   const renames = useMemo(() => TYPES.flatMap(([t]) => draft[t]
     .filter((c) => c.orig && c.orig !== c.name.trim() && c.name.trim())
     .map((c) => ({ type: t, from: c.orig, to: c.name.trim() }))), [draft]);
+  // 새 이름이 예전에 지운 카테고리(📦 로 남은 옛 내역)와 같으면 합쳐짐 → 나중에 다시 나눌 수 없어서 확인
+  const merges = renames
+    .filter((r) => !renames.some((x) => x.type === r.type && x.from === r.to))
+    .map((r) => ({ ...r, n: counts[`${r.type}:${r.to}`] || 0 }))
+    .filter((m) => m.n > 0);
   const renamedCount = renames.reduce((a, r) => a + (counts[`${r.type}:${r.from}`] || 0), 0);
   const removed = TYPES.flatMap(([t]) => current[t]
     .filter((c) => !draft[t].some((d) => d.orig === c.name))
@@ -58,6 +64,7 @@ export default function CategoryEditor({ counts, onSave }) {
       if (items.some((c) => c.icon.length > 8)) { setError('아이콘은 이모지 하나로 해 주세요.'); setType(t); return; }
       out[t] = items;
     }
+    if (merges.length && !mergeAsk) { setMergeAsk(true); return; }
     onSave(out, renames);
   };
 
@@ -101,10 +108,19 @@ export default function CategoryEditor({ counts, onSave }) {
           {removedCount > 0 && ` 기존 내역 ${removedCount}건은 지워지지 않고 📦 표시로 남아요.`}</p>
       )}
 
+      {mergeAsk && merges.length > 0 && (
+        <div className="merge-warn" role="alert">
+          <b>옛 내역과 합쳐져요.</b>
+          {merges.map((m) => (
+            <p key={`${m.type}:${m.from}`}>예전에 지운 <b>‘{m.to}’</b> 카테고리의 내역 {m.n}건이 남아 있어요. ‘{m.from}’의 내역과 합쳐져서, 나중에 이름을 다시 바꿔도 따로 나눌 수 없어요.</p>
+          ))}
+          <p>다른 이름으로 바꾸거나, 괜찮으면 <b>합쳐서 저장</b>을 눌러 주세요.</p>
+        </div>
+      )}
       <div className="err" aria-live="polite">{error}</div>
       <div className="form-actions">
-        <button type="button" className="btn ghost" onClick={() => setDraft(clone(DEFAULT_CATEGORIES))}>기본값으로</button>
-        <button type="submit" className="btn primary">저장</button>
+        <button type="button" className="btn ghost" onClick={() => { setDraft(clone(DEFAULT_CATEGORIES)); setMergeAsk(false); }}>기본값으로</button>
+        <button type="submit" className={`btn ${mergeAsk && merges.length ? 'danger' : 'primary'}`}>{mergeAsk && merges.length ? '합쳐서 저장' : '저장'}</button>
       </div>
     </form>
   );
