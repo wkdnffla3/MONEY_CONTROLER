@@ -30,7 +30,8 @@ export function setup() {
     if (!fs.existsSync(path.join(OUT, 'index.html'))) throw new Error('먼저 빌드하세요: node tests/e2e/build.mjs (npm run test:e2e 는 자동)');
     srv = await serve(OUT);
     env.url = `http://localhost:${srv.address().port}/`;
-    env.browser = await chromium.launch();
+    // 한글 파일 이름(백업·CSV)이 'download' 로 바뀌지 않게 UTF-8 로캘로 실행 (CI 기본값이 비어 있을 수 있음)
+    env.browser = await chromium.launch({ env: { ...process.env, LANG: process.env.LANG || 'C.UTF-8' } });
   });
   after(async () => { await env.browser?.close(); srv?.close(); });
   return env;

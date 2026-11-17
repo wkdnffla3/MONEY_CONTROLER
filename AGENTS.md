@@ -39,12 +39,13 @@ src/
   hooks/useComments.js   내역 댓글 (온라인 전용, 실시간)
   hooks/useNotifier.js   앱 안 알림 배너 / 화면 숨김 시 시스템 알림
   lib/outbox.js          값 검사(isValid*), 설정 종류 SETTINGS, 보낼 목록 합치기, 캐시
+  lib/backup.js          전체 백업 파일 만들기·검사(parseBackup)·복원 계획(planRestore·planSettings)
   lib/*.js               기능별 순수 함수 (recurring, shopping, cards, analysis, subscriptions, activity, household, push, device …)
   components/*.jsx       화면 조각
 public/sw.js             서비스워커: 화면 network-first, 빌드 파일 cache-first(설치 때 나뉜 화면 파일까지 import를 따라가 모두 저장), push / notificationclick
 src/lib/lazyScreens.js   첫 화면에 필요 없는 화면 목록(React.lazy) + 한가할 때 미리 받기
 src/components/ScreenBoundary.jsx  나뉜 화면 불러오는 중 표시 / 실패 시 "새 버전·새로고침" 안내
-supabase/schema.sql      새 프로젝트용 전체 스키마 (002~013 내용 포함)
+supabase/schema.sql      새 프로젝트용 전체 스키마 (002~014 내용 포함)
 supabase/00N_*.sql       기존 DB용 업데이트 (번호 순서대로, 여러 번 실행해도 안전하게 작성)
 supabase/functions/push-notify/index.ts   웹 푸시 발송 Edge Function (Deno)
 supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과 함수가 같은 파일을 import
@@ -96,7 +97,15 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 내역 댓글 (010) | 온라인 전용, 보낼 목록을 거치지 않음. 내 댓글만 삭제, 수정 없음. 내역을 지워도 댓글은 남아서 되살리면 다시 붙음. 푸시는 쓴 사람 계정의 모든 기기 제외 |
 | 구독 자동 발견 | 3달 이상 연속, 한 달 1회, 금액 차 10% 이내, 날짜 차 6일 이내, 마지막이 이번 달·지난달. 등록하면 `last`=이번 달이라 다음 달부터 자동 기록. 무시 목록은 공유 설정(`dismissed_subs`) |
 
-### 4.4 첫 화면 속도
+### 4.4 전체 백업·복원
+- 백업 파일(JSON, `format: 'ledger-backup'`, `version: 1`)은 이 기기 화면 기준(보관 목록 반영) 내역·장보기·설정 전체. 계정 ID는 넣지 않고 가계부 ID만. 댓글·변경 기록은 제외. 형식을 바꾸면 `version`을 올리고 `parseBackup`이 예전 버전도 읽게 한다.
+- 복원 파일은 신뢰하지 않는다: `parseBackup`이 줄마다 `isValidTx`/`isValidItem`/`SETTINGS[k].valid`로 검사하고 알려진 칸만 남긴다.
+- 내역·장보기는 보관 목록을 거치지 않고 `restoreBackup`이 `restore_backup` RPC로 300건씩 보낸다(온라인 전용, 다시 눌러도 같은 결과). 설정은 보관 목록으로.
+- "빠진 것만"(기본)은 없는 ID만 추가, 설정은 빠진 항목만 더함(예산은 0일 때만). "덮어쓰기"는 내용이 다른 줄·설정을 백업 값으로.
+- 다른 가계부의 백업이면 `rb-` + 해시로 새 ID를 만든다(같은 파일을 두 번 넣어도 같은 ID → 중복 없음). 장보기의 `txId`도 같이 바꾼다.
+- 내역 20건 이상인데 이 기기에서 30일 넘게 백업을 안 받았으면 메뉴에 "백업 권장"(`backupDue`, localStorage `ledger.lastBackup.<가계부ID>`).
+
+### 4.5 첫 화면 속도
 - 가계부 요약 화면에 쓰이는 것만 처음에 받고, 나머지 화면(내역 목록, 장보기, 리포트, 설정 시트들, 로그인 화면)은 `lib/lazyScreens.js`의 `Lazy`로 필요할 때 불러온다. 새 화면을 추가하면 이 목록에 넣고, **App 등 첫 화면 모듈에서 직접 import하지 않는다**(직접 import하면 분할이 깨짐). 시트 안은 `Sheet`가, 페이지는 `ScreenBoundary key={page}`가 감싼다.
 - 첫 화면 모듈이 상수만 필요하면 상수를 lib으로 옮긴다 (예: `lib/searchFilters.js`).
 - 웹폰트는 `main.jsx`에서 첫 그리기 뒤에 불러온다(그 전엔 시스템 글꼴). `vite.config.js`에서 react·supabase를 별도 파일로 묶어 앱만 바뀌면 그 파일은 다시 받지 않게 한다.
@@ -116,6 +125,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 009_report_schedule | 리포트 예약 (선택, 프로젝트ID·비밀 값을 채워서 실행) | 008, 함수 배포 |
 | 010_history_comments | `activity_log` 트리거, `tx_comments`, `dismissed_subs` | 008 |
 | 011_memo_200 | 메모 200자, 반복·즐겨찾기 설정 크기 한도 상향 (예전 설치마다 다른 제약 이름을 정의로 찾아 교체) | 008 |
+| 014_restore_backup | `restore_backup(p_tx, p_items, p_overwrite)` 백업 복원(security invoker, 1000건 한도, 앱은 300건씩). 가계부 ID는 항상 `current_ledger()`. 새로 넣는 줄은 `ledger.skip_log='restore'`로 기록 생략, 덮어쓰기(UPDATE)는 기록. 넣는 줄의 `device_id`는 비어 있어 푸시 함수가 알리지 않음 | 013 |
 | 013_rename_category | `rename_category(type, from, to)` 이름 일괄 변경(security invoker, 바뀐 건수 반환). 그 안에서만 `ledger.skip_log`를 켜서 `log_activity`가 카테고리만 바뀐 줄을 기록하지 않음 | 010 |
 | 012_push_endpoint_hosts | 푸시 주소를 실제 푸시 서비스(FCM·모질라·WNS·애플)로만 제한 `is_push_endpoint`. 앱(`push.js`)·Edge Function도 같은 규칙(`isPushEndpoint`, `_shared/notifyMessage.js`). 앱은 012 없이도 동작 | 007 |
 
@@ -128,7 +138,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 - `tests/unit`: 순수 함수.
 - `tests/edge`: Edge Function을 esbuild로 묶어 Node에서 가짜 web-push·DB로 실행.
 - `tests/e2e`: `src/`를 esbuild로 묶되 `@supabase/supabase-js`만 `fake-supabase.js`로 바꾼 앱을 Playwright(크로미움)로 조작. 화면 구성, 메모·링크·자정, 오프라인·재전송·중복 방지, 카테고리 이름 변경, 011 전 DB 보관, 공유 참여, 댓글, 변경 기록·되살리기, 서비스 워커 오프라인.
-- `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·푸시 주소 제한(012)·이름 일괄 변경(013)·리포트 예약.
+- `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·푸시 주소 제한(012)·이름 일괄 변경(013)·백업 복원(014)·리포트 예약.
 - 바꿀 때 같이 고칠 것: 새 DB 칸·테이블 → `fake-supabase.js`의 `MISSING`/`tableMissing`와 SQL 테스트. 화면 문구·클래스 이름 → e2e 선택자. 새 마이그레이션 → `run.mjs`의 `SUITES`.
 - **아직 실제 Supabase 클라우드 위에서의 통합 점검은 자동화하지 않았다.** 크게 바꾼 뒤에는 통합 점검 체크리스트(계정 두 개로 공유·댓글·푸시·오프라인 입력)를 직접 확인하길 권한다.
 
@@ -142,4 +152,4 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 
 ## 9. 다음 후보 (사용자와 논의된 것)
 
-정산하기, 예산 초과 알림, 카드 결제일 알림, 장보기 리마인더, 연말정산 도우미, CSV 가져오기, 전체 백업·복원, 저축 목표, 앱 잠금(PIN), 다크 모드 직접 선택, 실제 Supabase 통합 점검, 코드 분할로 속도 개선.
+정산하기, 예산 초과 알림, 카드 결제일 알림, 장보기 리마인더, 연말정산 도우미, CSV 가져오기, 저축 목표, 앱 잠금(PIN), 다크 모드 직접 선택, 실제 Supabase 통합 점검, 코드 분할로 속도 개선.

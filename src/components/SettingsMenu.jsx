@@ -10,10 +10,11 @@ const ITEMS = [
   ['notify', '🔔', '알림', '다른 사람이 추가하면 알려주기'],
   ['budget', '💰', '월 예산', '한 달 전체 예산'],
   ['members', '👥', '함께 쓰는 사람', '사람별로 나눠 보기'],
-  ['export', '📄', 'CSV 내보내기', '엑셀에서 열기, 백업'],
+  ['backup', '🗄️', '백업·복원', '전체를 파일로 받기 · 되돌려 넣기'],
+  ['export', '📄', 'CSV 내보내기', '엑셀·구글 시트에서 열기'],
 ];
 
-export default function SettingsMenu({ onOpen, counts = {}, shared = false }) {
+export default function SettingsMenu({ onOpen, counts = {}, shared = false, backupDue = false }) {
   return (
     <ul className="menu-list">
       {ITEMS.map(([kind, icon, title, desc]) => (
@@ -22,6 +23,7 @@ export default function SettingsMenu({ onOpen, counts = {}, shared = false }) {
             <span className="mi">{icon}</span>
             <span className="mt"><b>{title}</b><small>{desc}</small></span>
             {kind === 'share' && shared ? <span className="share-badge">공유 중</span> : null}
+            {kind === 'backup' && backupDue ? <span className="due-badge">백업 권장</span> : null}
             {counts[kind] ? <span className="mc">{counts[kind]}</span> : null}
             <span className="chev" aria-hidden="true">›</span>
           </button>

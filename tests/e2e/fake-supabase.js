@@ -69,6 +69,17 @@ let session={user:{id:UID(),email:EMAILS[UID()],identities:[{}]}}; const subs=ne
 const fnErr=(m)=>({data:null,error:{code:'P0001',message:m}});
 const noFn=(fn)=>({data:null,error:{code:'PGRST202',message:`Could not find the function public.${fn} in the schema cache`}});
 const RPC={
+  // 014 백업 복원 (sessionStorage '__no014' 이면 014 전: 함수 없음)
+  restore_backup(db,{p_tx=[],p_items=[],p_overwrite=false}){ if(sessionStorage.getItem('__no014')) return noFn('restore_backup');
+    if(p_tx.length>1000||p_items.length>1000) return {data:null,error:{code:'22023',message:'too_many'}};
+    const lid=ledgerOf(db,UID()); const r={tx_added:0,tx_updated:0,tx_skipped:0,items_added:0,items_updated:0,items_skipped:0};
+    db.restoreCalls=(db.restoreCalls||0)+1; db.writes++;
+    const run=(table,rows,pre)=>{ for(const row of rows){ const i=db[table].findIndex(x=>x.id===row.id);
+      if(i<0){ db[table].push({...row,user_id:lid,device_id:null}); r[pre+'_added']++; continue; }
+      if(rowLedger(db[table][i])!==lid){ r[pre+'_skipped']++; continue; }
+      if(p_overwrite){ const cur=db[table][i]; const next={...cur,...row,user_id:lid}; if(JSON.stringify(cur)!==JSON.stringify(next)){ db[table][i]=next; r[pre+'_updated']++; } } } };
+    run('transactions',p_tx,'tx'); run('shopping_items',p_items,'items');
+    return {data:r,error:null}; },
   // 013 카테고리 이름 일괄 변경 (sessionStorage '__no013' 이면 013 전: 함수 없음)
   rename_category(db,{p_type,p_from,p_to}){ if(sessionStorage.getItem('__no013')) return noFn('rename_category');
     const lid=ledgerOf(db,UID()); let n=0; db.writes++; db.renameCalls=(db.renameCalls||0)+1;

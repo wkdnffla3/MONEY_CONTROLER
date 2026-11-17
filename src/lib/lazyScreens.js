@@ -11,6 +11,7 @@ const loaders = {
   RecurringManager: () => import('../components/RecurringManager'),
   CategoryEditor: () => import('../components/CategoryEditor'),
   ExportForm: () => import('../components/ExportForm'),
+  BackupPanel: () => import('../components/BackupPanel'),
   CardManager: () => import('../components/CardManager'),
   AdvancedSearch: () => import('../components/AdvancedSearch'),
   NotificationSettings: () => import('../components/NotificationSettings'),

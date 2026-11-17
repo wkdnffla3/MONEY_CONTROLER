@@ -558,6 +558,43 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     return enqueueMany(ops);
   }, [enqueueMany, getQ, setQ]);
 
+  /**
+   * 백업 복원 (lib/backup.js 의 planRestore 결과). 인터넷 연결 필요.
+   * 내역·장보기는 DB 함수 restore_backup(014)으로 300건씩 → 요청 수가 적고, 변경 기록·알림이 내역마다 쌓이지 않음.
+   * 설정은 평소처럼 보관 목록으로 (몇 개뿐). 끝나면 서버에서 다시 불러옴.
+   * 014 전이면 { code: 'need014' } 오류.
+   */
+  const restoreBackup = useCallback(async ({ tx = [], items = [], settings = [] }, { overwrite = false, onProgress } = {}) => {
+    if (!userId || !supabase) throw Object.assign(new Error('로그인이 필요해요'), { code: 'auth' });
+    if (navigator.onLine === false) throw Object.assign(new Error('인터넷 연결이 필요해요'), { code: 'offline' });
+    const CHUNK = 300;
+    const txRows = tx.map(([id, t]) => { const r = toRow(id, userId, t, 0, null); delete r.user_id; return r; });
+    const itemRows = items.map(([id, i]) => { const r = toItemRow(id, userId, i, null); delete r.user_id; return r; });
+    const total = txRows.length + itemRows.length;
+    const sum = { tx_added: 0, tx_updated: 0, tx_skipped: 0, items_added: 0, items_updated: 0, items_skipped: 0 };
+    let done = 0;
+    onProgress?.(0, total);
+    const call = async (pTx, pItems) => {
+      const { data, error: e } = await withTimeout(Promise.resolve(
+        supabase.rpc('restore_backup', { p_tx: pTx, p_items: pItems, p_overwrite: !!overwrite })), 30000);
+      if (e) {
+        if (isMissingFn(e)) {
+          setSchemaNeed((n) => (!n || n > '014' ? '014' : n));
+          throw Object.assign(new Error('DB 업데이트(014)가 필요해요'), { code: 'need014' });
+        }
+        throw e;
+      }
+      for (const k of Object.keys(sum)) sum[k] += Number(data?.[k]) || 0;
+      done += pTx.length + pItems.length;
+      onProgress?.(done, total);
+    };
+    for (let i = 0; i < txRows.length; i += CHUNK) await call(txRows.slice(i, i + CHUNK), []);
+    for (let i = 0; i < itemRows.length; i += CHUNK) await call([], itemRows.slice(i, i + CHUNK));
+    if (settings.length) await enqueueMany(settings.map(({ kind, value }) => ({ opId: newId(), kind, value })));
+    await load();
+    return { ...sum, settings: settings.length };
+  }, [userId, enqueueMany, load]);
+
   // ---- 장보기 ----
   const saveItem = useCallback((id, data) => enqueue({ opId: newId(), kind: 'item', id, data }), [enqueue]);
   const deleteItems = useCallback((ids) => enqueueMany(ids.map((id) => ({ opId: newId(), kind: 'itemDel', id }))), [enqueueMany]);
@@ -619,6 +656,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     saveMembers,
     saveSetting,
     saveCategories,
+    restoreBackup,
     saveItem,
     updateItems,
     deleteItems,

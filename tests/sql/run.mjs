@@ -37,6 +37,8 @@ const SUITES = [
   { name: 'rename', files: [schema, 'rename.test.sql'] },
   // 이미 쓰던 DB에 011 → 012 → 013 을 차례로 실행한 경우
   { name: 'rename-upgrade', files: [path.join(here, 'fixtures/schema_pre011.sql'), mig('011_memo_200.sql'), mig('012_push_endpoint_hosts.sql'), mig('013_rename_category.sql'), 'rename.test.sql'] },
+  { name: 'backup', files: [schema, 'backup.test.sql'] },
+  { name: 'backup-upgrade', files: [path.join(here, 'fixtures/schema_pre011.sql'), mig('011_memo_200.sql'), mig('012_push_endpoint_hosts.sql'), mig('013_rename_category.sql'), mig('014_restore_backup.sql'), 'backup.test.sql'] },
   { name: 'push-endpoint', files: [schema, 'push-endpoint.test.sql'] },
   { name: 'push-endpoint-upgrade', files: [path.join(here, 'fixtures/schema_pre011.sql'), mig('011_memo_200.sql'), 'push-endpoint-upgrade.test.sql'], vars: { migration: mig('012_push_endpoint_hosts.sql') } },
   { name: 'report', files: [schema, noExt('009_report_schedule.sql'), 'report.test.sql'], vars: { migration: noExt('009_report_schedule.sql') } },

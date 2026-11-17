@@ -78,6 +78,10 @@ export function whoText(members, memberId) {
  */
 export function buildNotification({ table, type = 'INSERT', record, members = [] }) {
   if (type !== 'INSERT' || !record || typeof record !== 'object' || typeof record.id !== 'string') return null;
+  // 백업 복원(014)으로 들어온 줄: 기기 ID 칸이 있는데 비어 있음 → 알리지 않음 (수천 건 알림 폭주 방지)
+  // (앱이 넣는 줄은 007 이후 항상 기기 ID가 있고, 007 전 DB는 칸 자체가 없어서 영향 없음)
+  if ((table === 'transactions' || table === 'shopping_items')
+    && Object.prototype.hasOwnProperty.call(record, 'device_id') && record.device_id == null) return null;
   const who = whoText(members, record.member_id);
 
   if (table === 'transactions') {

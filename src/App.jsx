@@ -25,6 +25,7 @@ import { PlusIcon } from './components/Icons';
 import { CategoryBudgetCard, CategoryBudgetForm } from './components/CategoryBudget';
 import MonthlyTrend from './components/MonthlyTrend';
 import SettingsMenu from './components/SettingsMenu';
+import { backupDue } from './lib/backup';
 import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
 import { summarize as summarizeShopping } from './lib/shopping';
@@ -50,7 +51,7 @@ import ScreenBoundary from './components/ScreenBoundary';
 
 // 첫 화면에 필요 없는 화면들: 필요할 때 불러옴 (lib/lazyScreens.js)
 const {
-  TxList, ReportPage, ShoppingPage, ShopItemForm, PurchaseConfirm, RecurringManager, CategoryEditor, ExportForm, CardManager,
+  TxList, ReportPage, ShoppingPage, ShopItemForm, PurchaseConfirm, RecurringManager, CategoryEditor, ExportForm, BackupPanel, CardManager,
   AdvancedSearch, NotificationSettings, SharePanel, FavoritesManager, ActivityLog, MembersForm, BudgetForm, AuthScreen, NewPasswordScreen,
 } = Lazy;
 
@@ -589,7 +590,7 @@ export default function App() {
 
       {sheet?.kind === 'menu' && (
         <Sheet title="설정" onClose={closeSheet}>
-          <SettingsMenu onOpen={(kind) => setSheet({ kind })}
+          <SettingsMenu onOpen={(kind) => setSheet({ kind })} backupDue={backupDue(ledgerId, allTx.length)}
             shared={household.joined || household.people.length > 1}
             counts={{ favorites: ledger.favorites.length, recurring: ledger.recurring.filter((r) => r.active).length, members: members.length, cards: ledger.cards.length, catBudgets: Object.keys(ledger.catBudgets).length }} />
         </Sheet>
@@ -607,6 +608,11 @@ export default function App() {
       {sheet?.kind === 'catBudgets' && (
         <Sheet title="카테고리별 예산" onClose={closeSheet}>
           <CategoryBudgetForm catBudgets={ledger.catBudgets} monthTx={monthTx} onSave={saveCatBudgets} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'backup' && (
+        <Sheet title="백업·복원" onClose={closeSheet}>
+          <BackupPanel ledger={ledger} ledgerId={ledgerId} online={online} onToast={show} />
         </Sheet>
       )}
       {sheet?.kind === 'export' && (
