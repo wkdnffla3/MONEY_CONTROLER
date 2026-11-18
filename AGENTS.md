@@ -134,7 +134,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 
 ## 7. 테스트
 
-자세한 내용: `tests/README.md`. 패키지 업데이트는 Dependabot(`.github/dependabot.yml`)이 매주 PR로 올린다. 실제 Supabase·비밀 키는 쓰지 않는다. GitHub Actions(`.github/workflows/test.yml`)가 push·PR마다 실행한다.
+자세한 내용: `tests/README.md`. 패키지 업데이트는 Dependabot(`.github/dependabot.yml`)이 매주 minor·patch 를 PR 하나로 올린다. 메이저는 자동 PR을 막아 두었으니, 올릴 때는 함께 쓰는 패키지(예: vite ↔ @vitejs/plugin-react)를 같이 올리고 전체 테스트를 돌린다. 실제 Supabase·비밀 키는 쓰지 않는다. GitHub Actions(`.github/workflows/test.yml`)가 push·PR마다 실행한다.
 
 - `tests/unit`: 순수 함수.
 - `tests/edge`: Edge Function을 esbuild로 묶어 Node에서 가짜 web-push·DB로 실행.
