@@ -26,6 +26,7 @@ import { CategoryBudgetCard, CategoryBudgetForm } from './components/CategoryBud
 import MonthlyTrend from './components/MonthlyTrend';
 import SettingsMenu from './components/SettingsMenu';
 import { backupDue } from './lib/backup';
+import { PRIVACY_HASH } from './lib/privacy';
 import { MAX_RECURRING, recurringTxId, ruleFromTx } from './lib/recurring';
 import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
@@ -52,7 +53,7 @@ import ScreenBoundary from './components/ScreenBoundary';
 
 // 첫 화면에 필요 없는 화면들: 필요할 때 불러옴 (lib/lazyScreens.js)
 const {
-  TxList, ReportPage, ShoppingPage, ShopItemForm, PurchaseConfirm, RecurringManager, CategoryEditor, ExportForm, BackupPanel, CardManager,
+  TxList, ReportPage, ShoppingPage, ShopItemForm, PurchaseConfirm, RecurringManager, CategoryEditor, ExportForm, BackupPanel, AccountPanel, PrivacyPolicy, CardManager,
   AdvancedSearch, NotificationSettings, SharePanel, FavoritesManager, ActivityLog, MembersForm, BudgetForm, AuthScreen, NewPasswordScreen,
 } = Lazy;
 
@@ -88,6 +89,18 @@ export default function App() {
   const [query, setQuery] = useState('');
   const [who, setWho] = useState('all'); // 보기 기준: 'all' | 'shared' | 사람 id
   const [meId, setMeId] = useState(null); // 이 기기를 쓰는 사람
+  // 개인정보 처리방침 (#privacy, 로그인 없이도)
+  const [showPrivacy, setShowPrivacy] = useState(() => window.location.hash === PRIVACY_HASH);
+  useEffect(() => {
+    const onHash = () => setShowPrivacy(window.location.hash === PRIVACY_HASH);
+    window.addEventListener('hashchange', onHash);
+    window.addEventListener('popstate', onHash);
+    return () => { window.removeEventListener('hashchange', onHash); window.removeEventListener('popstate', onHash); };
+  }, []);
+  const closePrivacy = () => {
+    window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    setShowPrivacy(false);
+  };
   const [page, setPage] = useState(pageFromHash);
   const pageRef = useRef(page);
   pageRef.current = page;
@@ -412,12 +425,22 @@ export default function App() {
     if (uid) { clearUserData(uid); writeHousehold(uid, null); }
     await auth.signOut();
   };
+  // 회원 탈퇴가 끝난 뒤: 서버 데이터는 이미 지워졌으니 이 기기의 사본·알림·로그인도 정리
+  const afterAccountDeleted = async () => {
+    closeSheet();
+    await Promise.race([disablePush().catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+    ledger.clearLocalData();
+    if (uid) { clearUserData(uid); writeHousehold(uid, null); }
+    try { localStorage.removeItem(`ledger.lastBackup.${ledgerId}`); } catch { /* 무시 */ }
+    await Promise.resolve(auth.signOut()).catch(() => {});
+  };
   const handleSignOut = () => {
     if (ledger.pendingCount > 0) setSheet({ kind: 'logout' });
     else doSignOut();
   };
 
   // ---- 화면 분기 ----
+  if (showPrivacy) return <ScreenBoundary><PrivacyPolicy onClose={closePrivacy} /></ScreenBoundary>;
   if (configError) {
     return (
       <div className="app">
@@ -625,6 +648,13 @@ export default function App() {
       {sheet?.kind === 'catBudgets' && (
         <Sheet title="카테고리별 예산" onClose={closeSheet}>
           <CategoryBudgetForm catBudgets={ledger.catBudgets} monthTx={monthTx} onSave={saveCatBudgets} />
+        </Sheet>
+      )}
+      {sheet?.kind === 'account' && (
+        <Sheet title="계정·개인정보" onClose={closeSheet}>
+          <AccountPanel email={auth.user.email} online={online}
+            ownerWithOthers={household.isOwner && household.people.length > 1} joined={household.joined}
+            onBackup={() => setSheet({ kind: 'backup' })} onShare={() => setSheet({ kind: 'share' })} onDeleted={afterAccountDeleted} />
         </Sheet>
       )}
       {sheet?.kind === 'backup' && (

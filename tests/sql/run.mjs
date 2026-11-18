@@ -37,6 +37,7 @@ const SUITES = [
   { name: 'rename', files: [schema, 'rename.test.sql'] },
   // 이미 쓰던 DB에 011 → 012 → 013 을 차례로 실행한 경우
   { name: 'rename-upgrade', files: [path.join(here, 'fixtures/schema_pre011.sql'), mig('011_memo_200.sql'), mig('012_push_endpoint_hosts.sql'), mig('013_rename_category.sql'), 'rename.test.sql'] },
+  { name: 'delete-account', files: [schema, 'delete-account.test.sql'] },
   { name: 'recurring100', files: [schema, 'recurring100.test.sql'], vars: { migration: mig('015_recurring_100.sql'), mig011: mig('011_memo_200.sql') } },
   // 이미 쓰던 DB(011 전 = 50개 제한 이름이 제각각)에 011 → 015
   { name: 'recurring100-upgrade', files: [path.join(here, 'fixtures/schema_pre011.sql'), mig('011_memo_200.sql'), mig('015_recurring_100.sql'), 'recurring100.test.sql'], vars: { migration: mig('015_recurring_100.sql'), mig011: mig('011_memo_200.sql') } },

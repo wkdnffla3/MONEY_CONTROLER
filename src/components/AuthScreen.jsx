@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { LogoIcon } from './Icons';
 import { getRemember, redirectUrl, setRemember, supabase } from '../lib/supabase';
 import { koError } from '../lib/errors';
+import { PRIVACY_HASH } from '../lib/privacy';
 
 const MIN_PW = 6;
 const isEmail = (s) => /^\S+@\S+\.\S+$/.test(s);
@@ -106,6 +107,12 @@ export function AuthScreen() {
         )}
 
         <div className={`err ${msg.ok ? 'ok' : ''}`} aria-live="polite">{msg.text}</div>
+        {mode === 'signup' && (
+          <p className="auth-legal">
+            가입하면 이메일과 입력한 가계부 내용이 <a href={PRIVACY_HASH}>개인정보 처리방침</a>에 따라 처리돼요.
+            만 14세 이상만 가입할 수 있어요.
+          </p>
+        )}
         <button className="btn primary" type="submit" disabled={busy}>{SUBMIT_LABEL[mode]}</button>
         {mode === 'reset' && (
           <button type="button" className="linkbtn" style={{ justifySelf: 'center' }} onClick={() => switchMode('login')}>
@@ -165,6 +172,7 @@ function AuthShell({ children }) {
           <p>내 계정으로 로그인하면 어느 기기에서나 같은 내역을 볼 수 있어요.</p>
         </div>
         {children}
+        <p className="auth-foot"><a href={PRIVACY_HASH}>개인정보 처리방침</a></p>
       </div>
     </div>
   );
