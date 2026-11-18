@@ -1,5 +1,7 @@
-# 패키지 보안 업데이트 자동 알림: 취약점이 있거나 새 버전이 나오면 GitHub가 PR을 만들어 줌.
+# 패키지 업데이트 자동 알림: 취약점이 있거나 새 버전이 나오면 GitHub가 PR을 만들어 줌.
 # PR이 오면 Actions 테스트가 자동으로 돌고, ✅ 이면 Merge 하면 됨 (Vercel 이 자동 재배포).
+# 큰 버전(메이저, 예: vite 7 → 8)은 함께 쓰는 패키지와 코드까지 같이 바꿔야 해서 자동 PR을 만들지 않음.
+# (보안 취약점 PR은 이 설정과 상관없이 GitHub가 따로 만들어 줌 — Settings → Code security 의 Dependabot security updates)
 version: 2
 updates:
   - package-ecosystem: npm
@@ -10,14 +12,15 @@ updates:
       time: "09:00"
       timezone: Asia/Seoul
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
-      # 작은 업데이트는 PR 하나로 묶음 (큰 버전 업은 따로)
+      # 작은 업데이트는 PR 하나로 묶음
       minor-and-patch:
         update-types: [minor, patch]
-    labels: [dependencies]
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
-    labels: [dependencies]
