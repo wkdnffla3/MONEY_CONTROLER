@@ -162,7 +162,7 @@ export function planSettings(cur, bak = {}, overwrite = false) {
     if (overwrite) next = bak[k];
     else if (k === 'budget') next = now > 0 ? now : bak[k];
     else if (k === 'members' || k === 'cards') next = addById(now, bak[k], 10);
-    else if (k === 'recurring') next = addById(now, bak[k], 50);
+    else if (k === 'recurring') next = addById(now, bak[k], 100);
     else if (k === 'favorites') next = addById(now, bak[k], 20);
     else if (k === 'catBudgets') {
       next = { ...now };

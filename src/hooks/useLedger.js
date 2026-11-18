@@ -128,6 +128,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   onForbiddenRef.current = onForbidden;
   const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
   const renameFnRef = useRef(true);     // 013(rename_category 함수) 있는지. 없다고 확인되면 false
+  const recurBlockedRef = useRef(false); // 반복 내역 51개 이상이 015 전 DB(50개 제한)에 걸려 보관 중인지
   const memoBlockedRef = useRef(false); // 긴 메모가 예전 DB 제한에 걸려 보관 중인지 (011 안내)
   const [server, setServer] = useState(EMPTY_STATE); // 서버(또는 캐시)에서 받은 상태 { tx, budget, members }
   const [schemaOutdated, setSchemaOutdated] = useState(false); // DB 업데이트 필요
@@ -232,6 +233,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       noItemsTable ? '005' : null,
       noDeviceCol ? '007' : null,
       memoBlockedRef.current ? '011' : null,
+      recurBlockedRef.current ? '015' : null,
       renameFnRef.current ? null : '013',
     ].filter(Boolean).sort()[0] || null;
     if (noDeviceCol) deviceColRef.current = false;
@@ -311,6 +313,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       // 서로 다른 대상끼리는 순서가 상관없고, 같은 대상은 목록에 하나만 있으므로 건너뛰어도 안전.
       const skipped = new Set();
       memoBlockedRef.current = false; // 이번 시도에서 다시 걸리면 다시 켜짐
+      recurBlockedRef.current = false;
       for (;;) {
         const op = getQ().find((o) => !skipped.has(o.opId));
         if (!op) break;
@@ -318,6 +321,14 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
         if (e) {
           // device_id 칸만 없는 거면(007 전) 그 칸을 빼고 바로 다시 보냄 — 알림만 덜 정확해질 뿐 저장엔 문제없음
           if (isDeviceColError(e) && deviceColRef.current) { deviceColRef.current = false; continue; }
+          // 반복 내역 51개 이상인데 015 전 DB(50개 제한) → 버리지 않고 보관, 015 실행 안내
+          if (op.kind === 'recurring' && Array.isArray(op.value) && op.value.length > 50 && String(e.code) === '23514') {
+            recurBlockedRef.current = true;
+            setSchemaNeed((n) => (!n || n > '015' ? '015' : n));
+            setSchemaOutdated(true);
+            skipped.add(op.opId);
+            continue;
+          }
           // 메모가 길어서 예전 DB 제한(100자)에 걸림 → 버리지 않고 보관, 011 실행 안내
           if (isMemoLimitError(e)) {
             memoBlockedRef.current = true;

@@ -48,6 +48,7 @@ function q(table){ const st={f:[],cols:'*'}; const b={
   upsert(row){ if(tableMissing(table)) return exec(()=>noTable(table), true); const mc=missingIn(table, Object.keys(row).join(',')); if(mc) return exec(()=>({error:{code:'PGRST204',message:`Could not find the '${mc}' column of '${table}' in the schema cache`}}), true);
     return exec(db=>{
     if(LV()===0 && OWNED.includes(table) && row.user_id && row.user_id!==ledgerOf(db,UID())) return rlsDenied(table);
+    if(sessionStorage.getItem('__no015') && table==='settings' && Array.isArray(row.recurring) && row.recurring.length>50) return {data:null,error:{code:'23514',message:'new row for relation "settings" violates check constraint "settings_recurring_valid"'}};
     if(sessionStorage.getItem('__memo100') && (table==='transactions'||table==='shopping_items') && String(row.memo||'').length>100) return {data:null,error:{code:'23514',message:`new row for relation "${table}" violates check constraint "${table}_memo_check"`}};
     if(table==='push_subscriptions'){ row={account_id:UID(), user_id:ledgerOf(db,UID()), ...row}; if(row.user_id!==ledgerOf(db,UID())) return rlsDenied(table); }
     db.writes++;
