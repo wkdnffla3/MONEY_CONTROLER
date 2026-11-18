@@ -706,3 +706,34 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .bk-mode small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .bk-done{font-size:13px;color:var(--accent);margin:10px 0 0}
 .menu-list .due-badge{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--expense-soft);color:var(--expense);margin-left:6px;white-space:nowrap}
+
+/* 즐겨찾기: 사람별 묶음 · 펼치기 */
+.fav-head h2 small{font-size:12px;font-weight:600;color:var(--muted);margin-left:2px}
+.fav-actions{display:flex;gap:12px;align-items:center}
+.fav-tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;margin:0 0 10px;padding-bottom:2px}
+.fav-tabs::-webkit-scrollbar{display:none}
+.fav-tabs .chip{flex:none}
+.fav-group+.fav-group{margin-top:10px}
+.fav-glabel{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--muted);margin:0 0 6px}
+.fav-glabel .dot,.fav-tabs .dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex:none;margin-right:4px}
+.fav-chips.wrap{display:grid;grid-template-columns:repeat(auto-fill,minmax(98px,1fr));gap:6px;overflow:visible}
+.fav-chips.wrap .fav-chip{padding:8px 8px 8px 7px;column-gap:5px;border-radius:12px}
+.fav-chips.wrap .fav-chip .fi{font-size:17px}
+.fav-chips.wrap .fav-chip .fl{font-size:13px}
+.fav-chips.wrap .fav-chip .fa{font-size:11.5px}
+.fav-chips.wrap .fav-chip{min-width:0}
+.fav-chips.wrap .fav-chip .fl,.fav-chips.wrap .fav-chip .fa{overflow:hidden;text-overflow:ellipsis}
+.fav-mgroup+.fav-mgroup{margin-top:14px}
+
+/* 옆으로 넘기는 줄: PC 마우스 끌기·휠·◀ ▶ */
+.hs{position:relative;min-width:0}
+.hs .dragging{cursor:grabbing;user-select:none;scroll-behavior:auto}
+.hs .dragging *{pointer-events:none}
+.hs-btn{display:none;position:absolute;top:50%;transform:translateY(-50%);width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:20px;line-height:1;box-shadow:0 2px 8px rgba(0,0,0,.12);z-index:2;cursor:pointer;padding:0 0 2px}
+.hs-btn.left{left:-6px}
+.hs-btn.right{right:-6px}
+@media (hover:hover) and (pointer:fine){
+  .hs-btn{display:grid;place-items:center;opacity:0;transition:opacity .15s}
+  .hs:hover .hs-btn,.hs-btn:focus-visible{opacity:1}
+  .hs > .fav-chips,.hs > .fav-tabs{cursor:grab}
+}

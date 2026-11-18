@@ -509,7 +509,7 @@ export default function App() {
             />
             <WhoFilter members={members} who={whoValid} onChange={setWho} />
             <Summary inc={totals.inc} exp={totals.exp} cmp={monthCmp} who={whoLabel} />
-            <FavoritesBar favorites={ledger.favorites} onUse={applyFavorite} onManage={() => setSheet({ kind: 'favorites' })} />
+            <FavoritesBar favorites={ledger.favorites} members={members} meId={meId} onUse={applyFavorite} onManage={() => setSheet({ kind: 'favorites' })} />
             <section className="grid insights">
               <SubscriptionFinder suggestions={subSuggestions} onRegister={registerSubscription} onDismiss={dismissSubscription} />
               <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
@@ -646,7 +646,7 @@ export default function App() {
       )}
       {sheet?.kind === 'favorites' && (
         <Sheet title="즐겨찾기" onClose={closeSheet}>
-          <FavoritesManager favorites={ledger.favorites} members={members} onSave={saveFavorites} />
+          <FavoritesManager favorites={ledger.favorites} members={members} meId={meId} onSave={saveFavorites} />
         </Sheet>
       )}
       {sheet?.kind === 'notify' && notifier.prefs && (
