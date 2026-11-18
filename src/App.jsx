@@ -26,6 +26,7 @@ import { CategoryBudgetCard, CategoryBudgetForm } from './components/CategoryBud
 import MonthlyTrend from './components/MonthlyTrend';
 import SettingsMenu from './components/SettingsMenu';
 import { backupDue } from './lib/backup';
+import { MAX_RECURRING, recurringTxId, ruleFromTx } from './lib/recurring';
 import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
 import { summarize as summarizeShopping } from './lib/shopping';
@@ -213,6 +214,22 @@ export default function App() {
       .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
   };
 
+  // 새 내역 저장. "🔁 매달 반복"을 켰으면 반복 규칙도 함께 (이번 내역 = 그 달 몫이라 ID를 반복 내역 형식으로)
+  const addTx = (data, { repeat } = {}) => {
+    if (!repeat || ledger.recurring.length >= MAX_RECURRING) { saveTx(newId(), data, false); return; }
+    closeSheet();
+    const [y, m] = data.date.split('-').map(Number);
+    if (y !== ym.y || m !== ym.m) setYm({ y, m });
+    const rule = ruleFromTx(data, newId());
+    Promise.all([
+      ledger.saveTx(recurringTxId(rule.id, data.date.slice(0, 7)), data),
+      ledger.saveSetting('recurring', [...ledger.recurring, rule]),
+    ])
+      .then(([a, b]) => show(`${data.type === 'income' ? '수입' : '지출'} ${won(data.amount)} 저장 · 🔁 매달 ${rule.day}일 반복 등록`
+        + savedSuffix(a.synced && b.synced, navigator.onLine !== false)))
+      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+  };
+
   // ---- 장보기 ----
   const shopItems = ledger.items;
   const shopSummary = useMemo(() => summarizeShopping(Object.values(shopItems)), [shopItems]);
@@ -337,7 +354,7 @@ export default function App() {
     <aside className="side-form card" aria-label="내역 추가">
       <h2 style={{ color: 'var(--ink)', fontSize: 16 }}>새 내역</h2>
       <TxForm key={`${ymKey(ym.y, ym.m)}-${meId}-${members.map((m) => m.id).join()}`} defaultDate={defaultDate}
-        members={members} defaultMemberId={formDefaultMember} onSubmit={(d) => saveTx(newId(), d, false)} />
+        members={members} defaultMemberId={formDefaultMember} canRepeat={ledger.recurring.length < MAX_RECURRING} onSubmit={addTx} />
     </aside>
   );
 
@@ -564,7 +581,7 @@ export default function App() {
       {sheet?.kind === 'add' && (
         <Sheet title="내역 추가" onClose={closeSheet}>
           <TxForm key={sheet.prefill?.id || 'new'} autoFocus defaultDate={sheet.prefill ? todayStr() : defaultDate} members={members}
-            defaultMemberId={formDefaultMember} prefill={sheet.prefill} onSubmit={(d) => saveTx(newId(), d, false)} />
+            defaultMemberId={formDefaultMember} prefill={sheet.prefill} canRepeat={ledger.recurring.length < MAX_RECURRING} onSubmit={addTx} />
         </Sheet>
       )}
       {sheet?.kind === 'edit' && editing && (

@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
 import { SHARED_LABEL, findMember, memberColor } from '../lib/members';
 import { newId, MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
-import { nextDate, occurrenceDate, ymOf } from '../lib/recurring';
+import { MAX_RECURRING, nextDate, occurrenceDate, ymOf } from '../lib/recurring';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 
-const MAX_RULES = 50;
+const MAX_RULES = MAX_RECURRING;
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
 const dayLabel = (d) => (d === 31 ? '말일' : `${d}일`);
 const fmtDate = (s) => { const [, m, d] = s.split('-').map(Number); return `${m}월 ${d}일`; };

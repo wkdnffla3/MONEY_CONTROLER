@@ -9,6 +9,7 @@ import { SHARED_LABEL, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount } from '../lib/format';
 import { MAX_MEMO } from '../lib/outbox';
 import MemoLinks from './MemoLinks';
+import { backfillCount } from '../lib/recurring';
 
 const QUICK = [1000, 5000, 10000, 50000];
 const quickLabel = (v) => (v >= 10000 ? `+${v / 10000}만` : `+${v / 1000}천`);
@@ -18,9 +19,10 @@ const MAX_AMOUNT = 9_999_999_999;
  * 내역 입력/수정 폼.
  * initial 이 있으면 수정 모드(삭제 버튼 표시), 없으면 새 내역.
  * prefill 은 새 내역의 처음 값 (즐겨찾기에서 열 때). 날짜는 defaultDate.
- * onSubmit(data) 는 Promise 를 돌려줘야 함 — 성공하면 새 내역 모드에서 입력값을 비움.
+ * onSubmit(data, { repeat }) 는 Promise 를 돌려줘야 함 — 성공하면 새 내역 모드에서 입력값을 비움.
+ * repeat: 새 내역에서 "🔁 매달 반복"을 켰는지 (canRepeat=false 면 버튼 꺼짐: 반복 내역이 가득 참)
  */
-export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null }) {
+export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null, canRepeat = true }) {
   const seed = initial || prefill || null;
   const uid = useId();
   const amountRef = useRef(null);
@@ -40,6 +42,7 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
   const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(prefill?.memberId ?? defaultMemberId)));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [repeat, setRepeat] = useState(false); // 새 내역: 매달 반복으로도 등록
   const submitting = useRef(false); // 저장 버튼 연타로 같은 내역이 두 번 만들어지는 것 방지
 
   // 수정 중인 내역의 카테고리가 삭제된 경우에도 그대로 보이게(말없이 바뀌지 않게) 목록 끝에 붙여 둠
@@ -69,6 +72,7 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
     submitting.current = true;
     setBusy(true);
     try {
+      const repeatOn = !initial && repeat && canRepeat && !(type === 'expense' && cardId && inst > 1);
       await onSubmit({
         type,
         amount: n,
@@ -81,8 +85,8 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
         cardId: type === 'expense' && cardId && cards.some((c) => c.id === cardId) ? cardId : null,
         inst: type === 'expense' && cardId ? inst : 1,
         createdAt: initial?.createdAt || Date.now(),
-      });
-      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); setTags([]); setInst(1); }
+      }, { repeat: repeatOn });
+      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); setTags([]); setInst(1); setRepeat(false); }
     } catch {
       // 오류 알림은 상위(App)에서 토스트로 표시
     } finally {
@@ -184,6 +188,24 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
           <MemoLinks text={memo} />
         </div>
       </div>
+
+      {!initial && (() => {
+        const instBlock = type === 'expense' && cardId && inst > 1;
+        const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Number(date.slice(8, 10)) : null;
+        const fill = repeat && day ? backfillCount(date) : 0;
+        return (
+          <div className="repeat-row">
+            <button type="button" className="chip repeat-toggle" aria-pressed={repeat && !instBlock && canRepeat}
+              disabled={instBlock || !canRepeat} onClick={() => setRepeat((v) => !v)}>🔁 매달 반복</button>
+            <span className="hint">
+              {!canRepeat ? '반복 내역이 가득 찼어요 (최대 100개)'
+                : instBlock ? '할부는 반복으로 등록할 수 없어요'
+                : repeat && day ? <>매달 {day}일에 자동으로 기록돼요{fill > 0 ? ` · 지난달까지 빠진 ${fill}개월도 바로 채워요` : ''}{type === 'expense' && cardId ? ' · 카드·태그는 이번 내역에만' : ''}. ☰ → 반복 내역에서 고치거나 끌 수 있어요</>
+                : '월세·통신비·구독료·월급처럼 매달 같은 날 생기면 켜 두세요'}
+            </span>
+          </div>
+        );
+      })()}
 
       <div className="field">
         <label htmlFor={`${uid}-tags`}>태그</label>

@@ -76,9 +76,9 @@ export function isValidMembers(list) {
 const YM = /^\d{4}-(0[1-9]|1[0-2])$/;
 const isYm = (v) => typeof v === 'string' && YM.test(v);
 
-/** 반복 내역 규칙: 최대 50개 */
+/** 반복 내역 규칙: 최대 100개 (가계부 하나당, 015 전 DB는 50개) */
 export function isValidRecurring(list) {
-  if (!Array.isArray(list) || list.length > 50) return false;
+  if (!Array.isArray(list) || list.length > 100) return false;
   const ids = new Set();
   for (const r of list) {
     if (!r || typeof r !== 'object' || !isStr(r.id, 40) || ids.has(r.id)) return false;

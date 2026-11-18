@@ -82,3 +82,24 @@ export function nextDate(rule, today = new Date()) {
   if (rule.end && n > toNum(rule.end)) return null;
   return occurrenceDate(toYm(n), rule.day);
 }
+
+export const MAX_RECURRING = 100;
+
+/**
+ * 새 내역을 "매달 반복"으로 저장할 때의 규칙. 그 날짜의 일(day)마다, 그 달부터.
+ * 입력한 내역이 그 달 몫이므로 last = 그 달 → 같은 달은 다시 만들지 않음.
+ * (지난달 날짜로 넣으면 그다음 달부터 이번 달까지 빠진 달은 자동으로 채워짐)
+ */
+export function ruleFromTx(data, id) {
+  const ym = data.date.slice(0, 7);
+  return {
+    id, type: data.type, amount: data.amount, category: data.category, memo: data.memo || '',
+    memberId: data.memberId ?? null, day: Number(data.date.slice(8, 10)), start: ym, end: null, last: ym, active: true,
+  };
+}
+
+/** "매달 반복"으로 저장하면 바로 채워질 지난 달 수 (안내용) */
+export function backfillCount(date, today = new Date()) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 0;
+  return dueMonths(ruleFromTx({ date, type: 'expense', amount: 1, category: 'x' }, 'x'), today).length;
+}
