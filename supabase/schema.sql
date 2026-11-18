@@ -25,7 +25,7 @@ create table if not exists public.settings (
   members  jsonb not null default '[]'::jsonb
            check (jsonb_typeof(members) = 'array' and jsonb_array_length(members) <= 10 and pg_column_size(members) <= 4096),
   recurring jsonb not null default '[]'::jsonb
-           check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 50 and pg_column_size(recurring) <= 32768),
+           check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 100 and pg_column_size(recurring) <= 65536),
   categories jsonb
            check (categories is null or (jsonb_typeof(categories) = 'object' and pg_column_size(categories) <= 8192)),
   cat_budgets jsonb not null default '{}'::jsonb
@@ -466,7 +466,7 @@ begin
 end $$;
 alter table public.settings drop constraint if exists settings_recurring_valid;
 alter table public.settings add  constraint settings_recurring_valid
-  check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 50 and pg_column_size(recurring) <= 65536);
+  check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 100 and pg_column_size(recurring) <= 65536);
 alter table public.settings drop constraint if exists settings_favorites_valid;
 alter table public.settings add  constraint settings_favorites_valid
   check (jsonb_typeof(favorites) = 'array' and jsonb_array_length(favorites) <= 20 and pg_column_size(favorites) <= 16384);
@@ -674,5 +674,28 @@ begin
 end $$;
 revoke all on function public.restore_backup(jsonb, jsonb, boolean) from public, anon;
 grant execute on function public.restore_backup(jsonb, jsonb, boolean) to authenticated;
+
+notify pgrst, 'reload schema';
+
+-- ===== 015: 반복 내역 최대 100개 (supabase/015_recurring_100.sql 과 같은 내용) =====
+-- 반복 내역 최대 100개 (가계부 하나당, 공유 가계부는 참여자 모두 합쳐서)
+-- 설치마다 제약 이름이 다를 수 있어서, 반복 내역을 검사하는 제약을 정의로 찾아 지운 뒤 새로 만듦
+do $$
+declare r record;
+begin
+  for r in
+    select c.conname
+      from pg_constraint c
+     where c.contype = 'c'
+       and c.conrelid = 'public.settings'::regclass
+       and (pg_get_constraintdef(c.oid) like '%jsonb_array_length(recurring)%'
+         or pg_get_constraintdef(c.oid) like '%pg_column_size(recurring)%')
+  loop
+    execute format('alter table public.settings drop constraint %I', r.conname);
+  end loop;
+end $$;
+alter table public.settings drop constraint if exists settings_recurring_valid;
+alter table public.settings add  constraint settings_recurring_valid
+  check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 100 and pg_column_size(recurring) <= 65536);
 
 notify pgrst, 'reload schema';

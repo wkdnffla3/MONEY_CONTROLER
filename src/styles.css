@@ -737,3 +737,9 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
   .hs:hover .hs-btn,.hs-btn:focus-visible{opacity:1}
   .hs > .fav-chips,.hs > .fav-tabs{cursor:grab}
 }
+
+/* 새 내역: 매달 반복 */
+.repeat-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:-2px 0 12px}
+.repeat-row .chip{flex:none}
+.repeat-row .chip:disabled{opacity:.5;cursor:not-allowed}
+.repeat-row .hint{font-size:12.5px;line-height:1.45;flex:1;min-width:180px}

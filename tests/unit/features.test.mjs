@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate } from '../../src/lib/recurring.js';
+import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount } from '../../src/lib/recurring.js';
 import { csvCell, toCsv } from '../../src/lib/csv.js';
 import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../../src/lib/shopping.js';
 import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../../src/lib/outbox.js';
@@ -105,4 +105,24 @@ for (const bad of [{ ...A1, name: '' }, { ...A1, qty: 0 }, { ...A1, qty: 1000 },
   assert.equal(isValidItem(bad), false);
 assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'upsert', id: 'z' }), false); // 물품과 내역은 ID가 같아도 다른 대상
 assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' }), true);
+// 새 내역을 "매달 반복"으로: 그 날짜의 일마다, 그 달은 이미 입력했으니 다음 달부터
+{
+  const d = { type: 'expense', amount: 55000, category: '주거·통신', memo: '통신비', date: '2026-11-18', memberId: 'm1', tags: ['고정'], cardId: 'c1', inst: 1 };
+  const r = ruleFromTx(d, 'abc');
+  assert.deepEqual(r, { id: 'abc', type: 'expense', amount: 55000, category: '주거·통신', memo: '통신비', memberId: 'm1', day: 18, start: '2026-11', end: null, last: '2026-11', active: true });
+  assert.ok(isValidRecurring([r]));
+  const nov = new Date(2026, 10, 30);
+  assert.equal(planRecurring([r], nov).changed, false); // 같은 달은 다시 안 만듦
+  const { txs } = planRecurring([r], new Date(2026, 11, 18));
+  assert.deepEqual(txs.map((t) => t.id), [recurringTxId('abc', '2026-12')]);
+  assert.equal(txs[0].data.date, '2026-12-18');
+  // 31일 → 2월은 말일
+  assert.equal(planRecurring([ruleFromTx({ ...d, date: '2027-01-31' }, 'e')], new Date(2027, 1, 28)).txs[0].data.date, '2027-02-28');
+  // 지난달 날짜로 넣으면 빠진 달 수
+  assert.equal(backfillCount('2026-11-18', new Date(2026, 10, 18)), 0);
+  assert.equal(backfillCount('2026-09-05', new Date(2026, 10, 18)), 2); // 10월·11월(5일 지남)
+  assert.equal(backfillCount('2026-09-25', new Date(2026, 10, 18)), 1); // 10월만 (11월 25일은 아직)
+  assert.equal(backfillCount('2026-12-01', new Date(2026, 10, 18)), 0); // 앞날짜
+  assert.equal(backfillCount('', new Date()), 0);
+}
 console.log('feature unit tests: all passed');

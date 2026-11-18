@@ -37,7 +37,7 @@ begin
 end $$;
 alter table public.settings drop constraint if exists settings_recurring_valid;
 alter table public.settings add  constraint settings_recurring_valid
-  check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 50 and pg_column_size(recurring) <= 65536);
+  check (jsonb_typeof(recurring) = 'array' and jsonb_array_length(recurring) <= 100 and pg_column_size(recurring) <= 65536);
 alter table public.settings drop constraint if exists settings_favorites_valid;
 alter table public.settings add  constraint settings_favorites_valid
   check (jsonb_typeof(favorites) = 'array' and jsonb_array_length(favorites) <= 20 and pg_column_size(favorites) <= 16384);
