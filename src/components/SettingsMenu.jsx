@@ -12,6 +12,7 @@ const ITEMS = [
   ['members', '👥', '함께 쓰는 사람', '사람별로 나눠 보기'],
   ['backup', '🗄️', '백업·복원', '전체를 파일로 받기 · 되돌려 넣기'],
   ['export', '📄', 'CSV 내보내기', '엑셀·구글 시트에서 열기'],
+  ['account', '👤', '계정·개인정보', '로그인 계정 · 개인정보 처리방침 · 회원 탈퇴'],
 ];
 
 export default function SettingsMenu({ onOpen, counts = {}, shared = false, backupDue = false }) {
