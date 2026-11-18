@@ -33,15 +33,15 @@ npm run test:sql
 
 ```
 tests/
-  unit/      *.test.mjs            순수 함수 (outbox·반복·카드·분석·알림 문구·링크)
+  unit/      *.test.mjs            순수 함수 (outbox·반복·카드·분석·알림 문구·링크·백업)
   edge/      push-notify.test.mjs  Edge Function + 가짜 web-push·Supabase
   e2e/       build.mjs             src/ 를 그대로 묶고 supabase-js 만 fake-supabase.js 로 교체
              fake-supabase.js      sessionStorage 에 DB 흉내 (RLS·공유·기록·스키마 단계·네트워크 장애)
              helpers.mjs           정적 서버·크로미움·시드 데이터
-             *.e2e.test.mjs        화면 구성 / 메모·링크·자정 / 동기화 / 공유·댓글·기록 / 오프라인 앱
+             *.e2e.test.mjs        화면 구성 / 메모·링크·자정 / 동기화 / 공유·댓글·기록 / 백업·복원 / 오프라인 앱
   sql/       run.mjs               테스트마다 빈 DB → supabase-shim.sql → schema.sql → 테스트
              supabase-shim.sql     역할(anon·authenticated·service_role)·auth.uid()·Vault·pg_cron·pg_net 흉내
-             *.test.sql            보안 / 공유 / 기록 / 되살리기 / 메모 200 / 이름 일괄 변경 / 푸시 주소 제한 / 리포트 예약
+             *.test.sql            보안 / 공유 / 기록 / 되살리기 / 메모 200 / 이름 일괄 변경 / 백업 복원 / 푸시 주소 제한 / 리포트 예약
              fixtures/             011 전 스키마 (예전 DB에 011 을 덧붙이는 경우)
   .build/    (자동 생성, git 에 안 올림)
 ```

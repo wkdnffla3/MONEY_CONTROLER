@@ -3,6 +3,7 @@ import { iconOf, useCategories } from '../lib/categories';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 import { MAX_AMOUNT, MAX_FAVORITES, MAX_MEMO, newId } from '../lib/outbox';
 import { memberColor, SHARED_LABEL } from '../lib/members';
+import { groupFavorites, moveInGroup } from '../lib/favorites';
 
 const empty = (cats) => ({ label: '', type: 'expense', amount: 0, category: cats.expense[0].name, memo: '', memberId: null });
 
@@ -85,7 +86,7 @@ function FavoriteForm({ initial, members, onSubmit, onCancel, onDelete }) {
 }
 
 /** 즐겨찾기 관리: 목록 · 순서 · 고치기 · 삭제 · 새로 만들기 */
-export default function FavoritesManager({ favorites, members, onSave }) {
+export default function FavoritesManager({ favorites, members, meId = null, onSave }) {
   const cats = useCategories();
   const [editing, setEditing] = useState(null); // 즐겨찾기 id 또는 'new'
 
@@ -96,15 +97,15 @@ export default function FavoritesManager({ favorites, members, onSave }) {
     onSave(next, exists ? `"${fav.label}" 즐겨찾기를 고쳤어요` : `"${fav.label}" 즐겨찾기를 만들었어요`);
   };
   const del = (fav) => { setEditing(null); onSave(favorites.filter((x) => x.id !== fav.id), `"${fav.label}" 즐겨찾기를 지웠어요`); };
-  const move = (i, d) => {
-    const next = [...favorites];
-    [next[i], next[i + d]] = [next[i + d], next[i]];
-    onSave(next, '순서를 바꿨어요');
-  };
+  const move = (id, d) => onSave(moveInGroup(favorites, id, d, members), '순서를 바꿨어요');
+  const groups = groupFavorites(favorites, members, meId);
+  const split = groups.length > 1;
+  // 새로 만들 때 "누가"는 이 기기를 쓰는 사람으로 미리 선택
+  const newInitial = meId && members.some((m) => m.id === meId) ? { memberId: meId } : null;
 
   if (editing) {
     return (
-      <FavoriteForm key={editing} members={members} initial={favorites.find((x) => x.id === editing) || null}
+      <FavoriteForm key={editing} members={members} initial={favorites.find((x) => x.id === editing) || newInitial}
         onSubmit={put} onCancel={() => setEditing(null)}
         onDelete={editing !== 'new' ? () => del(favorites.find((x) => x.id === editing)) : undefined} />
     );
@@ -116,21 +117,26 @@ export default function FavoritesManager({ favorites, members, onSave }) {
         <p className="hint">아직 즐겨찾기가 없어요. 자주 쓰는 내역(점심, 교통비, 커피 등)을 만들어 두면 가계부 화면에서 한 번 눌러 입력돼요.
           내역을 눌러 수정 화면에서 "⭐ 즐겨찾기에 추가"를 눌러도 돼요.</p>
       ) : (
-        <ul className="fav-list">
-          {favorites.map((f, i) => (
-            <li key={f.id}>
-              <button type="button" className="fav-row" onClick={() => setEditing(f.id)}>
-                <span className="fi" aria-hidden="true">{iconOf(cats, f.type, f.category)}</span>
-                <span className="fr-main"><b>{f.label}</b><small>{f.type === 'income' ? '수입' : '지출'} · {f.category}{f.memo ? ` · ${f.memo}` : ''}</small></span>
-                <span className={`fr-amt ${f.type}`}>{f.amount ? won(f.amount) : '매번 입력'}</span>
-              </button>
-              <span className="fr-move">
-                <button type="button" aria-label={`${f.label} 위로`} disabled={i === 0} onClick={() => move(i, -1)}>▲</button>
-                <button type="button" aria-label={`${f.label} 아래로`} disabled={i === favorites.length - 1} onClick={() => move(i, 1)}>▼</button>
-              </span>
-            </li>
-          ))}
-        </ul>
+        groups.map((g) => (
+          <section key={g.key} className="fav-mgroup">
+            {split && <h4 className="fav-glabel"><span className="dot" style={{ background: g.color }} />{g.label}{g.isMe ? ' (나)' : ''} · {g.items.length}개</h4>}
+            <ul className="fav-list">
+              {g.items.map((f, i) => (
+                <li key={f.id}>
+                  <button type="button" className="fav-row" onClick={() => setEditing(f.id)}>
+                    <span className="fi" aria-hidden="true">{iconOf(cats, f.type, f.category)}</span>
+                    <span className="fr-main"><b>{f.label}</b><small>{f.type === 'income' ? '수입' : '지출'} · {f.category}{f.memo ? ` · ${f.memo}` : ''}</small></span>
+                    <span className={`fr-amt ${f.type}`}>{f.amount ? won(f.amount) : '매번 입력'}</span>
+                  </button>
+                  <span className="fr-move">
+                    <button type="button" aria-label={`${f.label} 위로`} disabled={i === 0} onClick={() => move(f.id, -1)}>▲</button>
+                    <button type="button" aria-label={`${f.label} 아래로`} disabled={i === g.items.length - 1} onClick={() => move(f.id, 1)}>▼</button>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))
       )}
       <button type="button" className="btn primary" disabled={favorites.length >= MAX_FAVORITES} onClick={() => setEditing('new')}>
         {favorites.length >= MAX_FAVORITES ? `최대 ${MAX_FAVORITES}개까지예요` : '+ 새 즐겨찾기'}

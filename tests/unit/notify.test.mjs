@@ -144,6 +144,12 @@ for (let i = 0; i < 30; i += 1) {
   assert.equal(shouldSend('monthly', {}), true);
   console.log('report unit tests: all passed');
 }
+// 백업 복원(014)으로 들어온 줄 (기기 ID 칸이 비어 있음) → 알림 없음. 007 전 DB(칸 없음)·앱 입력(기기 ID 있음)은 그대로
+assert.equal(buildNotification({ table: 'transactions', record: tx({ device_id: null }), members }), null);
+assert.equal(buildNotification({ table: 'shopping_items', record: { id: 'i1', user_id: 'u', name: '우유', qty: 1, price: 0, status: 'todo', device_id: null }, members }), null);
+assert.ok(buildNotification({ table: 'transactions', record: tx({ device_id: 'dev1' }), members }));
+assert.ok(buildNotification({ table: 'transactions', record: tx(), members }));
+assert.ok(buildNotification({ table: 'tx_comments', record: { id: 'c1', user_id: 'u', tx_id: 'abc', author: 'a', author_name: '준호', body: '안녕' }, members }));
 console.log('notify unit tests: all passed');
 // 12. 댓글 알림
 {
