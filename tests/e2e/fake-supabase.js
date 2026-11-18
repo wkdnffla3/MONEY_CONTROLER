@@ -66,10 +66,19 @@ function q(table){ const st={f:[],cols:'*'}; const b={
     if(st.upd) return exec(db=>{ db.writes++; db.updateCalls=(db.updateCalls||0)+1; db[table]=db[table].map(r=>visible(db,table,r)&&st.f.every(([k,v])=>(k==='user_id'?rowLedger(r):r[k])===v)?{...r,...st.upd}:r); return {error:null}; }, true).then(res,rej);
     const p = st.del ? exec(db=>{ db.writes++; const keep=[], gone=[]; for(const r of db[table]) ((visible(db,table,r)&&st.f.every(([k,v])=>r[k]===v)&&(table!=='tx_comments'||r.author===UID()))?gone:keep).push(r); db[table]=keep; gone.forEach(r=>logIt(db,table,'delete',r,null,r.id)); return {error:null}; }, true)
                      : exec(db=>({data:db[table].filter(r=>visible(db,table,r)&&st.f.every(([k,v])=>r[k]===v)&&(!st.lt||r[st.lt[0]]<st.lt[1])).sort((a,c)=>st.order?(a[st.order[0]]>c[st.order[0]]?1:-1)*st.order[1]:0).slice(0,st.limit||1e9).map(r=>{ const o={...r}; for(const c of (MISSING()[table]||[])) delete o[c]; return o; }),error:null})); return p.then(res,rej); } }; return b; }
-let session={user:{id:UID(),email:EMAILS[UID()],identities:[{}]}}; const subs=new Set();
+let session=sessionStorage.getItem('__signedOut')?null:{user:{id:UID(),email:EMAILS[UID()],identities:[{}]}}; const subs=new Set();
 const fnErr=(m)=>({data:null,error:{code:'P0001',message:m}});
 const noFn=(fn)=>({data:null,error:{code:'PGRST202',message:`Could not find the function public.${fn} in the schema cache`}});
 const RPC={
+  // 016 회원 탈퇴 (sessionStorage '__no016' 이면 016 전)
+  delete_account(db){ if(sessionStorage.getItem('__no016')) return noFn('delete_account');
+    const me=UID();
+    if(db.ledger_members.some(m=>m.ledger_id===me&&m.user_id!==me)) return {data:null,error:{code:'P0001',message:'ledger_has_members'}};
+    db.writes++; db.deletedAccounts=[...(db.deletedAccounts||[]),me];
+    for(const t of ['transactions','shopping_items','activity_log','push_subscriptions']) db[t]=db[t].filter(r=>r.user_id!==me&&r.account_id!==me);
+    db.tx_comments=db.tx_comments.filter(r=>r.user_id!==me&&r.author!==me);
+    db.settings=db.settings.filter(r=>r.user_id!==me); db.ledger_members=db.ledger_members.filter(m=>m.user_id!==me);
+    return {data:null,error:null}; },
   // 014 백업 복원 (sessionStorage '__no014' 이면 014 전: 함수 없음)
   restore_backup(db,{p_tx=[],p_items=[],p_overwrite=false}){ if(sessionStorage.getItem('__no014')) return noFn('restore_backup');
     if(p_tx.length>1000||p_items.length>1000) return {data:null,error:{code:'22023',message:'too_many'}};
@@ -106,7 +115,7 @@ const RPC={
 };
 export function createClient(){ return {
   auth:{ getSession:async()=>({data:{session}}), onAuthStateChange:(cb)=>{subs.add(cb);return {data:{subscription:{unsubscribe(){subs.delete(cb)}}}}},
-    signOut:async()=>{ session=null; subs.forEach(cb=>cb('SIGNED_OUT',null)); } },
+    signOut:async()=>{ session=null; sessionStorage.setItem('__signedOut','1'); subs.forEach(cb=>cb('SIGNED_OUT',null)); } },
   rpc:(fn,args={})=>exec(db=>{ if(LV()!==0) return noFn(fn); const f=RPC[fn]; return f?f(db,args):noFn(fn); }, fn!=='my_ledger'&&fn!=='peek_invite'),
   from:q, channel(){const c={on(ev,f,h){ (window.__rtH=window.__rtH||[]).push([f.table,h]); return c},subscribe(){return c}};return c}, removeChannel(){ window.__rtH=[]; } }; }
 // 테스트에서 실시간 이벤트 흉내: window.__rt('transactions', {eventType:'INSERT', new:{...}})

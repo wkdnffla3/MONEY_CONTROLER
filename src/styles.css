@@ -743,3 +743,33 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .repeat-row .chip{flex:none}
 .repeat-row .chip:disabled{opacity:.5;cursor:not-allowed}
 .repeat-row .hint{font-size:12.5px;line-height:1.45;flex:1;min-width:180px}
+
+/* 개인정보 처리방침 */
+.privacy-page{position:fixed;inset:0;z-index:200;background:var(--bg);overflow-y:auto;-webkit-overflow-scrolling:touch}
+.privacy-inner{max-width:760px;margin:0 auto;padding:20px 18px 48px;font-size:14px;line-height:1.65;color:var(--ink)}
+.privacy-inner h1{font-size:22px;margin:14px 0 4px}
+.privacy-inner h2{font-size:16px;margin:24px 0 8px}
+.privacy-meta{color:var(--muted);font-size:13px;margin:0 0 12px}
+.privacy-inner table{width:100%;border-collapse:collapse;font-size:13px;margin:6px 0 10px}
+.privacy-inner th,.privacy-inner td{border:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+.privacy-inner th{background:var(--surface-2);font-weight:700}
+.privacy-inner ul{padding-left:20px;margin:6px 0}
+.privacy-close{margin-top:24px;width:100%}
+.auth-legal{font-size:12.5px;color:var(--muted);line-height:1.55;text-align:center;margin:2px 0 0}
+.auth-legal a,.account-panel a{color:var(--accent);font-weight:600}
+.auth-foot{text-align:center;margin-top:12px;font-size:12.5px}
+.auth-foot a{color:var(--muted)}
+.account-panel .acc-sec{padding:4px 0 14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.account-panel .acc-sec:last-of-type{border-bottom:0}
+.account-panel h4{margin:0 0 6px;font-size:15px}
+.account-panel .acc-email{font-weight:700;word-break:break-all}
+.account-panel .del-box{background:var(--expense-soft);border-radius:12px;padding:12px;margin-top:10px;font-size:13px;line-height:1.55}
+.account-panel .del-box ul{margin:6px 0;padding-left:18px}
+.privacy-inner th,.privacy-inner td{word-break:keep-all;overflow-wrap:anywhere}
+@media (max-width:600px){
+  .pv-table,.pv-table tbody,.pv-table tr,.pv-table td{display:block;width:auto}
+  .pv-table thead{display:none}
+  .pv-table tr{border:1px solid var(--line);border-radius:12px;padding:8px 10px;margin:0 0 8px;background:var(--surface)}
+  .pv-table td{border:0;padding:3px 0}
+  .pv-table td::before{content:attr(data-label);display:block;font-size:11.5px;font-weight:700;color:var(--muted)}
+}
