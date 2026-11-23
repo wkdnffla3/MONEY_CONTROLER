@@ -45,7 +45,8 @@ export function compareMonths(allTx, ym, today = new Date()) {
 /**
  * 1년 요약. options: { members, cards } (이름 표시용)
  * 반환: { year, months[12]:{m,inc,exp}, inc, exp, net, rate, prev:{inc,exp}, incPct, expPct,
- *         maxMonth, categories:[{name, amount, share}], top:[내역 5개], byMember, byTag, byCard, count }
+ *         maxMonth, categories:[{key, name, amount, count, share, items}], top:[내역 5개], expenses:[지출 전체, 큰 순서],
+ *         byMember, byTag, byCard, count }   — items: 그 묶음의 지출 내역(큰 금액 순, 리포트에서 펼쳐 보기용)
  */
 export function yearReport(allTx, year, { members = [], cards = [] } = {}) {
   const inYear = allTx.filter((t) => typeof t.date === 'string' && t.date.startsWith(`${year}-`));
@@ -57,14 +58,14 @@ export function yearReport(allTx, year, { members = [], cards = [] } = {}) {
   });
   const inc = sumBy(inYear, 'income'), exp = sumBy(inYear, 'expense');
   const prev = { inc: sumBy(prevYear, 'income'), exp: sumBy(prevYear, 'expense') };
-  const expenses = inYear.filter((t) => t.type !== 'income');
+  const expenses = inYear.filter((t) => t.type !== 'income').sort((a, b) => b.amount - a.amount || (a.date < b.date ? 1 : -1));
 
   const group = (keyOf, nameOf) => {
     const m = new Map();
     for (const t of expenses) {
       for (const k of keyOf(t)) {
-        if (!m.has(k)) m.set(k, { key: k, name: nameOf(k), amount: 0, count: 0 });
-        const g = m.get(k); g.amount += t.amount; g.count += 1;
+        if (!m.has(k)) m.set(k, { key: k, name: nameOf(k), amount: 0, count: 0, items: [] });
+        const g = m.get(k); g.amount += t.amount; g.count += 1; g.items.push(t);
       }
     }
     return [...m.values()].sort((a, b) => b.amount - a.amount).map((g) => ({ ...g, share: exp ? g.amount / exp : 0 }));
@@ -78,7 +79,8 @@ export function yearReport(allTx, year, { members = [], cards = [] } = {}) {
     prev, incPct: pct(inc, prev.inc), expPct: pct(exp, prev.exp),
     maxMonth: withData.length ? withData.reduce((a, b) => (b.exp > a.exp ? b : a)) : null,
     categories: group((t) => [t.category], (k) => k),
-    top: [...expenses].sort((a, b) => b.amount - a.amount).slice(0, 5),
+    top: expenses.slice(0, 5),
+    expenses,
     byMember: members.length ? group((t) => [members.some((x) => x.id === t.memberId) ? t.memberId : 'shared'], memberName) : [],
     byTag: group((t) => t.tags || [], (k) => k),
     byCard: cards.length ? group((t) => [t.cardId && cards.some((c) => c.id === t.cardId) ? t.cardId : 'cash'], cardName) : [],

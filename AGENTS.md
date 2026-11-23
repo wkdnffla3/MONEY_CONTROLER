@@ -97,6 +97,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 내역 댓글 (010) | 온라인 전용, 보낼 목록을 거치지 않음. 내 댓글만 삭제, 수정 없음. 내역을 지워도 댓글은 남아서 되살리면 다시 붙음. 푸시는 쓴 사람 계정의 모든 기기 제외 |
 | 즐겨찾기 보기 | `lib/favorites.js` `groupFavorites`: "누가"(memberId) 기준 묶음, 이 기기 사람(meId) 먼저 → 사람 목록 순 → 공동(없음·지워진 사람). 묶음이 2개 이상일 때만 탭·묶음 이름. 펼치기·탭은 기기별 localStorage `ledger.favView`. 순서 바꾸기는 `moveInGroup`(같은 묶음 안에서만) |
 | 새 내역 → 매달 반복 | `TxForm`의 "🔁 매달 반복"(새 내역만) → `App.addTx`가 `ruleFromTx`(lib/recurring)로 규칙을 만들고 `last`=그 달, 입력한 내역의 ID는 `recurringTxId(규칙ID, 그 달)` → 같은 달 중복 없음. 지난달 날짜면 자동 등록 효과가 빠진 달을 채움. 할부(inst>1)·규칙 100개(`MAX_RECURRING`)면 꺼짐. 규칙엔 카드·태그 없음 |
+| 리포트 펼쳐 보기 | `yearReport`의 묶음(categories·byMember·byTag·byCard)마다 `items`(큰 금액 순 지출 내역), 전체 지출 `expenses`(큰 순). `ReportPage`의 `ShareList` 줄을 누르면 `ItemList`(10개씩 더 보기), 내역 → `onOpenTx`(수정 화면) |
 | 구독 자동 발견 | 3달 이상 연속, 한 달 1회, 금액 차 10% 이내, 날짜 차 6일 이내, 마지막이 이번 달·지난달. 등록하면 `last`=이번 달이라 다음 달부터 자동 기록. 무시 목록은 공유 설정(`dismissed_subs`) |
 
 ### 4.4 전체 백업·복원
