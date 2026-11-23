@@ -34,11 +34,14 @@ export default function AdvancedSearch({ allTx, members, cards, tags, filters, o
   const set = (patch) => { onFilters({ ...f, ...patch }); setShown(PAGE); };
   const toggle = (key, v) => set({ [key]: f[key].includes(v) ? f[key].filter((x) => x !== v) : [...f[key], v] });
 
-  const [from, to] = periodRange(f.period, f.from, f.to);
+  // 시작·끝(날짜, 금액)을 거꾸로 넣어도 0건이 되지 않게 작은 쪽부터
+  const [p1, p2] = periodRange(f.period, f.from, f.to);
+  const [from, to] = p1 && p2 && p1 > p2 ? [p2, p1] : [p1, p2];
+  const a1 = parseAmount(f.min), a2 = parseAmount(f.max);
+  const [min, max] = a1 && a2 && a1 > a2 ? [a2, a1] : [a1, a2];
   const result = useMemo(() => searchTx(allTx, {
-    from, to, type: f.type, categories: f.categories, who: f.who, tags: f.tags, card: f.card,
-    min: parseAmount(f.min), max: parseAmount(f.max), q: f.q,
-  }, members), [allTx, members, from, to, f]);
+    from, to, type: f.type, categories: f.categories, who: f.who, tags: f.tags, card: f.card, min, max, q: f.q,
+  }, members), [allTx, members, from, to, min, max, f]);
 
   const catList = f.type === 'income' ? cats.income : f.type === 'expense' ? cats.expense
     : [...cats.expense, ...cats.income.filter((c) => !cats.expense.some((e) => e.name === c.name))];

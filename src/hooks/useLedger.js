@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRemember, supabase } from '../lib/supabase';
 import {
   EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isMemoLimitError, isValidOp, isRetryable, isSchemaError, newId, queueStorageKey, renameOps, readCache,
-  readQueue, removeOp, sameTarget, sanitizeSetting, writeCache, writeQueue,
+  readQueue, rebase, removeOp, sameTarget, sanitizeSetting, setVer, verKey, withBase, writeCache, writeQueue,
 } from '../lib/outbox';
 import { planRecurring, ymOf } from '../lib/recurring';
 import { planPurchase } from '../lib/shopping';
@@ -96,6 +96,16 @@ const withTimeout = (promise, ms) => Promise.race([
   new Promise((resolve) => setTimeout(() => resolve({ error: { message: 'timeout: 서버 응답 없음' } }), ms)),
 ]);
 
+// ---- 버전 확인(017) 도우미 ----
+// 다른 기기가 먼저 고쳤다는 서버 오류 (설정 저장 함수 save_setting)
+const isVersionConflict = (e) => !!e && (String(e.code) === 'LV409' || /version_conflict/.test(String(e.message || '')));
+// 서버 줄과 보내려던 내용이 같은지 (같으면 "내가 이미 올린 것"이 응답만 못 받은 경우 → 성공으로 봄)
+const TX_SAME_KEYS = ['type', 'amount', 'category', 'memo', 'date', 'member_id', 'tags', 'card_id', 'inst_months', 'created_at'];
+const ITEM_SAME_KEYS = ['name', 'qty', 'price', 'category', 'member_id', 'memo', 'checked', 'status', 'paid', 'tx_id', 'bought_at', 'created_at'];
+const norm = (v) => (v === undefined ? null : typeof v === 'number' ? v : (typeof v === 'string' && /^-?\d+$/.test(v) ? Number(v) : v));
+const sameRow = (a, b, keys) => keys.every((k) => !(k in b) || JSON.stringify(norm(a[k])) === JSON.stringify(norm(b[k])));
+const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
 // 같은 대상(같은 내역 ID, 또는 예산)에 대한 작업이 아직 목록에 남아 있는지
 const hasPendingFor = (queue, op) => queue.some((o) => sameTarget(o, op));
 
@@ -119,7 +129,7 @@ const remoteInsert = (table, payload) => {
 
 // userId = 지금 보는 가계부 ID (내 가계부면 내 계정 ID, 공유 가계부에 참여 중이면 그 가계부 ID)
 // accountId = 로그인한 계정 ID (전송 전 로그인 확인용)
-export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
+export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict } = {}) {
   const online = useOnline();
   const onRemoteRef = useRef(onRemote);
   onRemoteRef.current = onRemote;
@@ -127,6 +137,10 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   accountRef.current = accountId;
   const onForbiddenRef = useRef(onForbidden);
   onForbiddenRef.current = onForbidden;
+  const onConflictRef = useRef(onConflict);
+  onConflictRef.current = onConflict;
+  const verRef = useRef(null);         // 017(버전 칸) 있는지: null 모름, true/false
+  const saveFnRef = useRef(true);      // 017 save_setting 함수 있는지
   const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
   const renameFnRef = useRef(true);     // 013(rename_category 함수) 있는지. 없다고 확인되면 false
   const recurBlockedRef = useRef(false); // 반복 내역 51개 이상이 015 전 DB(50개 제한)에 걸려 보관 중인지
@@ -136,6 +150,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   const [schemaNeed, setSchemaNeed] = useState(null);           // 먼저 실행할 업데이트 파일 번호
   const [serverLoaded, setServerLoaded] = useState(false);     // 이번 접속에서 서버 데이터를 한 번 이상 받았는지
   const [today, setToday] = useState(() => new Date().toDateString()); // 날짜가 바뀌면 반복 내역 확인
+  const [loadedDay, setLoadedDay] = useState(null); // 서버 데이터를 마지막으로 받은 날 (반복 내역은 오늘 받은 데이터로만 판단)
   const [queue, setQueue] = useState([]);                       // 아직 못 보낸 작업
   const [status, setStatus] = useState('idle');                 // idle | loading | ok | error
   const [error, setError] = useState(null);
@@ -193,7 +208,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       const loadTx = async () => {
         let r;
         for (let i = 0; i < TX_COL_SETS.length; i += 1) {
-          r = await fetchAll(() => supabase.from('transactions').select(TX_COL_SETS[i]));
+          r = await fetchAll(() => supabase.from('transactions').select(TX_COL_SETS[i] + (verRef.current ? ',version' : '')));
           if (!isSchemaError(r.error)) { txLevel = i; return r; }
         }
         return r;
@@ -201,14 +216,15 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       // 설정: 최신 칸 묶음부터 시도
       const loadSettings = async () => {
         for (let i = 0; i < SETTINGS_COL_SETS.length; i += 1) {
-          const r = await supabase.from('settings').select(SETTINGS_COL_SETS[i].join(',')).maybeSingle();
+          const cols = [...SETTINGS_COL_SETS[i], ...(verRef.current && i === 0 ? ['ver'] : [])];
+          const r = await supabase.from('settings').select(cols.join(',')).maybeSingle();
           if (!isSchemaError(r.error)) { setLevel = i; return r; }
         }
         return { data: null, error: null };
       };
       // 장보기: 테이블이 없으면(005 전) 기기에 있던 목록을 그대로 둠
       const loadItems = async () => {
-        const r = await fetchAll(() => supabase.from('shopping_items').select(ITEM_COLS));
+        const r = await fetchAll(() => supabase.from('shopping_items').select(ITEM_COLS + (verRef.current ? ',version' : '')));
         if (isSchemaError(r.error)) { noItemsTable = true; return { data: null, error: null }; }
         return r;
       };
@@ -217,6 +233,11 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
         const r = await supabase.from('transactions').select('device_id').eq('id', '__probe__');
         noDeviceCol = isSchemaError(r.error);
       };
+      // 017(버전 칸) 적용 여부: 한 번 확인되면 다시 묻지 않음
+      if (verRef.current !== true) {
+        const r = await supabase.from('transactions').select('version').eq('id', '__probe__');
+        verRef.current = !r.error ? true : isSchemaError(r.error) ? false : null;
+      }
       [txRes, stRes, itRes] = await Promise.all([loadTx(), loadSettings(), loadItems(), probeDevice().catch(() => {})]);
     } catch (e) {
       txRes = { error: e };
@@ -239,6 +260,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       memoBlockedRef.current ? '011' : null,
       recurBlockedRef.current ? '015' : null,
       renameFnRef.current ? null : '013',
+      verRef.current === false ? '017' : null, // 버전 확인(동시에 고칠 때 덮어쓰기 방지) — 없어도 예전처럼 동작
     ].filter(Boolean).sort()[0] || null;
     if (noDeviceCol) deviceColRef.current = false;
     setSchemaNeed(need);
@@ -251,23 +273,93 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       const kind = KIND_BY_COLUMN[col];
       if (kind) next[kind] = sanitizeSetting(kind, kind === 'budget' ? Number(val) || 0 : val);
     }
+    // 서버 버전 표 (017 이후에만. 없으면 예전처럼 확인 없이 저장)
+    if (verRef.current) {
+      const ver = {};
+      for (const r of txRes.data) if (r.version != null) ver[`tx:${r.id}`] = Number(r.version);
+      if (itRes?.data && !itRes.error) for (const r of itRes.data) if (r.version != null) ver[`item:${r.id}`] = Number(r.version);
+      else for (const [k, v] of Object.entries(serverRef.current._ver || {})) if (k.startsWith('item:')) ver[k] = v;
+      const sv = stRes?.data?.ver;
+      for (const [kind, d] of Object.entries(SETTINGS)) ver[`set:${kind}`] = Number(sv?.[d.column]) || 0;
+      next._ver = ver;
+    }
     // 불러오는 사이에 전송이 끝난 작업은 응답에 빠져 있을 수 있으니 덧씌움
-    const late = sentLog.current.filter((x) => x.at >= startedAt).map((x) => x.op);
+    const lateLog = sentLog.current.filter((x) => x.at >= startedAt);
     if (activeLedger.current !== userId) return;
-    updateServer(applyQueue(next, late));
+    let merged = applyQueue(next, lateLog.map((x) => x.op));
+    for (const x of lateLog) merged = setVer(merged, x.op, x.version);
+    updateServer(merged);
     loadedFor.current = userId;
     setError(null);
     setStatus('ok');
     setServerLoaded(true);
+    setLoadedDay(new Date().toDateString());
   }, [userId, updateServer]);
 
   // ---- 작업 하나 전송 ----
+  // 결과: { error } | { version } (017: 새 서버 버전, 지웠으면 null) | { conflict: 'changed'|'deleted' }
   const send = useCallback(async (op) => {
     try {
+      const device = deviceColRef.current && getDeviceId();
+      const checked = verRef.current === true && op.base !== undefined; // 버전 확인해서 저장
+      // 내역·물품: 버전 조건을 붙여 추가/수정/삭제
+      if (checked && (op.kind === 'upsert' || op.kind === 'item' || op.kind === 'delete' || op.kind === 'itemDel')) {
+        const isTx = op.kind === 'upsert' || op.kind === 'delete';
+        const table = isTx ? 'transactions' : 'shopping_items';
+        const cols = isTx ? TX_COL_SETS[legacyRef.current] : ITEM_COLS;
+        const keys = isTx ? TX_SAME_KEYS : ITEM_SAME_KEYS;
+        const fetchRow = async () => {
+          const r = await withTimeout(Promise.resolve(supabase.from(table).select(`${cols},version`).eq('id', op.id)), SEND_TIMEOUT_MS);
+          return r.error ? { error: r.error } : { row: (r.data || [])[0] || null };
+        };
+        if (op.kind === 'delete' || op.kind === 'itemDel') {
+          if (op.base === null) return await withTimeout(Promise.resolve(supabase.from(table).delete().eq('id', op.id)), SEND_TIMEOUT_MS);
+          const r = await withTimeout(Promise.resolve(supabase.from(table).delete().eq('id', op.id).eq('version', op.base).select('id')), SEND_TIMEOUT_MS);
+          if (r.error) return r;
+          if ((r.data || []).length) return { error: null, version: null };
+          const f = await fetchRow(); // 0줄: 이미 지워졌거나(괜찮음) 다른 기기가 고침(충돌)
+          if (f.error) return f;
+          return f.row ? { conflict: 'changed', row: f.row } : { error: null, version: null };
+        }
+        const row = isTx ? toRow(op.id, userId, op.data, legacyRef.current, device) : toItemRow(op.id, userId, op.data, device);
+        if (op.base === null) {
+          const r = await withTimeout(Promise.resolve(supabase.from(table).insert(row).select('version')), SEND_TIMEOUT_MS);
+          if (!r.error) return { error: null, version: Number(r.data?.[0]?.version) || 1 };
+          if (String(r.error.code) !== '23505') return r;
+          // 같은 ID가 이미 있음: 내가 먼저 보낸 게 응답만 못 받은 거면 성공, 다른 기기가 만든 거면 충돌
+          const f = await fetchRow();
+          if (f.error) return f;
+          if (f.row && sameRow(f.row, row, keys)) return { error: null, version: Number(f.row.version) };
+          return { conflict: 'changed', row: f.row };
+        }
+        const { id: _id, user_id: _u, ...patch } = row;
+        const r = await withTimeout(Promise.resolve(supabase.from(table).update(patch).eq('id', op.id).eq('version', op.base).select('version')), SEND_TIMEOUT_MS);
+        if (r.error) return r;
+        if ((r.data || []).length) return { error: null, version: Number(r.data[0].version) };
+        const f = await fetchRow(); // 0줄: 다른 기기가 고쳤거나 지움 (내가 보낸 게 이미 반영된 거면 성공)
+        if (f.error) return f;
+        if (!f.row) return { conflict: 'deleted' };
+        if (sameRow(f.row, row, keys)) return { error: null, version: Number(f.row.version) };
+        return { conflict: 'changed', row: f.row };
+      }
+      // 설정: save_setting 함수로 칸 하나만 버전 확인해서 저장
+      if (checked && SETTINGS[op.kind] && saveFnRef.current) {
+        const col = SETTINGS[op.kind].column;
+        const r = await withTimeout(Promise.resolve(supabase.rpc('save_setting', { p_col: col, p_value: op.value, p_base: op.base })), SEND_TIMEOUT_MS);
+        if (!r.error) return { error: null, version: Number(r.data) || 0 };
+        if (isMissingFn(r.error)) { saveFnRef.current = false; }
+        else if (isVersionConflict(r.error)) {
+          const f = await withTimeout(Promise.resolve(supabase.from('settings').select(`${col},ver`).maybeSingle()), SEND_TIMEOUT_MS);
+          if (f.error) return f;
+          const cur = op.kind === 'budget' ? Number(f.data?.[col]) || 0 : f.data?.[col];
+          if (sameValue(cur, op.value)) return { error: null, version: Number(f.data?.ver?.[col]) || 0 };
+          return { conflict: 'changed' };
+        } else return r;
+      }
       let req;
-      if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current, deviceColRef.current && getDeviceId()));
+      if (op.kind === 'upsert') req = supabase.from('transactions').upsert(toRow(op.id, userId, op.data, legacyRef.current, device));
       else if (op.kind === 'delete') req = supabase.from('transactions').delete().eq('id', op.id);
-      else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data, deviceColRef.current && getDeviceId()));
+      else if (op.kind === 'item') req = supabase.from('shopping_items').upsert(toItemRow(op.id, userId, op.data, device));
       else if (op.kind === 'itemDel') req = supabase.from('shopping_items').delete().eq('id', op.id);
       // 카테고리 이름 변경: 이 가계부에서 그 이름을 쓰는 내역을 서버가 한 번에 바꿈 (요청 1번, 다른 칸은 그대로)
       // 다시 보내도 이미 바뀐 뒤라 아무 일도 없어서 안전.
@@ -320,10 +412,21 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       const skipped = new Set();
       memoBlockedRef.current = false; // 이번 시도에서 다시 걸리면 다시 켜짐
       recurBlockedRef.current = false;
+      const conflicts = [];
       for (;;) {
         const op = getQ().find((o) => !skipped.has(o.opId));
         if (!op) break;
-        const { error: e } = await send(op);
+        const res = await send(op);
+        // 다른 기기가 먼저 고침(017): 이 작업은 올리지 않고 빼서 알림. 자동 작업(반복 내역 기록 등)은 조용히 뺌
+        if (res.conflict) {
+          setQ(removeOp(getQ(), op.opId));
+          const c = Object.assign(new Error('다른 기기에서 먼저 바뀌었어요'), { code: 'conflict', reason: res.conflict, op });
+          failed.current.set(op.opId, c);
+          if (!op.soft) conflicts.push(c);
+          droppedAny = true;
+          continue;
+        }
+        const { error: e, version } = res;
         if (e) {
           // device_id 칸만 없는 거면(007 전) 그 칸을 빼고 바로 다시 보냄 — 알림만 덜 정확해질 뿐 저장엔 문제없음
           if (isDeviceColError(e) && deviceColRef.current) { deviceColRef.current = false; continue; }
@@ -362,10 +465,10 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
           droppedAny = true;
           continue;
         }
-        setQ(removeOp(getQ(), op.opId));
-        updateServer(applyQueue(serverRef.current, [op]));
+        setQ(rebase(removeOp(getQ(), op.opId), op, version));
+        updateServer(setVer(applyQueue(serverRef.current, [op]), op, version));
         const now = Date.now();
-        sentLog.current = [...sentLog.current.filter((x) => now - x.at < 60000), { at: now, op }];
+        sentLog.current = [...sentLog.current.filter((x) => now - x.at < 60000), { at: now, op, version }];
       }
       if (skipped.size) {
         scheduleRetry(() => flushRef.current()); // DB가 업데이트되면 다음 시도에 올라감
@@ -374,6 +477,8 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
         clearTimeout(retryTimer.current);
       }
       if (droppedAny) await load();
+      // 최신 내용을 받은 뒤에 알림 → "내 것으로 저장"을 누르면 최신 버전 기준으로 다시 저장됨
+      if (conflicts.length) { try { onConflictRef.current?.(conflicts); } catch { /* 알림 실패가 동기화를 막지 않게 */ } }
     };
 
     const withLock = async () => {
@@ -418,6 +523,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     storageBroken.current = false;
     setStorageFull(false);
     setServerLoaded(false);
+    setLoadedDay(null);
     activeLedger.current = userId;
     loadedFor.current = null;
     if (!userId || !supabase) {
@@ -504,9 +610,11 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
 
   // ---- 저장 동작 (화면에서 호출) ----
   /** 작업을 목록에 넣고 전송을 시도. 결과: { synced } — 서버까지 올라갔으면 true */
-  const enqueue = useCallback(async (op) => {
+  const enqueue = useCallback(async (op0) => {
+    const q0 = getQ();
+    const op = withBase(op0, q0, serverRef.current._ver);
     if (op.kind === 'upsert' || op.kind === 'item') markOwn([op.id]);
-    setQ(coalesce(getQ(), op));
+    setQ(coalesce(q0, op));
     await flush();
     const err = failed.current.get(op.opId);
     if (err) { failed.current.delete(op.opId); throw err; }
@@ -523,7 +631,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     }
     markOwn(ops.filter((o) => o.kind === 'upsert' || o.kind === 'item').map((o) => o.id));
     let q = getQ();
-    for (const op of ops) q = coalesce(q, op);
+    for (const op of ops) q = coalesce(q, withBase(op, q, serverRef.current._ver));
     setQ(q);
     await flush();
     const errs = ops.map((o) => failed.current.get(o.opId)).filter(Boolean);
@@ -545,11 +653,25 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   const viewRef = useRef(view);
   viewRef.current = view;
 
-  const saveTx = useCallback((id, data) => enqueue({ opId: newId(), kind: 'upsert', id, data }), [enqueue]);
+  // opts.base: 수정 창을 열 때 본 버전 (verOf). 주면 창을 연 뒤 다른 기기가 고친 것도 충돌로 알 수 있음
+  const saveTx = useCallback((id, data, opts = {}) => enqueue({ opId: newId(), kind: 'upsert', id, data, ...(opts.base !== undefined ? { base: opts.base } : {}) }), [enqueue]);
+  /** 지금 이 내역(물품)의 "본 버전": 아직 못 올린 작업이 있으면 그 작업이 본 버전, 아니면 서버 버전 (모르면 undefined) */
+  const verOf = useCallback((kind, id) => {
+    const probe = { kind, id };
+    const p = getQ().find((o) => sameTarget(o, probe));
+    if (p) return p.base;
+    const v = serverRef.current._ver;
+    return v ? (v[verKey(probe)] ?? null) : undefined;
+  }, [getQ]);
+  /** 충돌로 저장하지 않은 작업을 최신 버전 기준으로 다시 저장 ("내 것으로 저장"·"다시 살리기"·"그래도 지우기") */
+  const retryConflict = useCallback((c) => {
+    const { opId: _o, base: _b, soft: _s, ...rest } = c.op;
+    return enqueue({ ...rest, opId: newId() });
+  }, [enqueue]);
 
-  const deleteTx = useCallback(async (id) => {
+  const deleteTx = useCallback(async (id, opts = {}) => {
     const prev = viewRef.current.tx[id];
-    const result = await enqueue({ opId: newId(), kind: 'delete', id });
+    const result = await enqueue({ opId: newId(), kind: 'delete', id, ...(opts.base !== undefined ? { base: opts.base } : {}) });
     return { prev, ...result };
   }, [enqueue]);
 
@@ -655,14 +777,22 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   // 이번 접속에서 서버 데이터를 받은 뒤에만 실행 (오래된 캐시 기준으로 지운 내역을 다시 만들지 않도록).
   // 등록 후 규칙의 last가 올라가므로 이 효과가 다시 돌아도 같은 달을 또 만들지 않음.
   const recurringKey = JSON.stringify(view.recurring);
+  // 날짜가 바뀌면(자정, 잠들었던 기기가 깨어남) 먼저 서버 데이터를 새로 받고 나서 판단.
+  // 어제 받은 데이터로 바로 만들면, 그사이 다른 기기가 이미 기록하고 고친(또는 지운) 이번 달 내역을 옛 값으로 덮어씀
+  useEffect(() => {
+    if (userId && serverLoaded && loadedDay && loadedDay !== today) load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [today]);
   useEffect(() => {
     if (!userId || !serverLoaded || loadedFor.current !== userId) return; // 전환 직후엔 아직 이전 가계부 상태
+    if (loadedDay !== today) return; // 오늘 받은 서버 데이터가 아직 없음 (위에서 받는 중)
     const plan = planRecurring(viewRef.current.recurring, new Date());
     if (!plan.changed) return;
-    const ops = plan.txs.map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data }));
-    ops.push({ opId: newId(), kind: 'recurring', value: plan.rules });
+    // soft: 다른 기기가 먼저 기록·수정했으면(017 충돌) 조용히 빼고, 최신 내용을 받은 뒤 다시 판단
+    const ops = plan.txs.map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data, soft: true }));
+    ops.push({ opId: newId(), kind: 'recurring', value: plan.rules, soft: true });
     enqueueMany(ops).catch(() => {});
-  }, [userId, serverLoaded, recurringKey, today, enqueueMany]);
+  }, [userId, serverLoaded, loadedDay, recurringKey, today, enqueueMany]);
 
   return {
     tx: view.tx,
@@ -680,6 +810,8 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     thisMonth: ymOf(new Date(today)),
     status,
     serverLoaded,
+    retryConflict,
+    verOf,
     error,
     online,
     syncing,

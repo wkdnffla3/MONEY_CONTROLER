@@ -36,15 +36,18 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .iconbtn:hover{background:var(--surface-2)}
 .iconbtn:focus-visible,.btn:focus-visible,.chip:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 
-.grid{display:grid;gap:14px}
+.grid{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)} /* 한 칸이 넓은 내용(사람 이름이 긴 필터 등)에 밀려 화면 밖으로 넘치지 않게 */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:var(--shadow)}
 .card h2{font-size:14px;font-weight:600;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 
-.summary{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .summary .bal{grid-column:1/-1}
 .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow)}
 .stat .k{font-size:12.5px;color:var(--muted);font-weight:500}
-.stat .v{font-size:21px;font-weight:600;margin-top:2px;word-break:keep-all}
+.stat .v{font-size:21px;font-weight:600;margin-top:2px;word-break:keep-all;overflow-wrap:anywhere}
+/* 큰 금액(천만 원대 이상)은 좁은 휴대폰에서 칸을 밀어내지 않게 글자를 줄임 */
+.stat .v.long{font-size:17px}
+.stat.bal .v.long{font-size:22px}
 .stat.bal{background:var(--accent);border-color:transparent;color:#fff}
 @media (prefers-color-scheme: dark){.stat.bal{color:#10201a}}
 .stat.bal .k{color:inherit;opacity:.8}
@@ -122,7 +125,7 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 @media (prefers-color-scheme: dark){.fab{color:#10201a}}
 
 /* form */
-.form{display:grid;gap:14px}
+.form{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)} /* 긴 이메일·코드 등이 시트를 옆으로 넓히지 않게 */
 .typeswitch{display:grid;grid-template-columns:1fr 1fr;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:3px}
 .typeswitch button{padding:9px;border-radius:9px;font-weight:600;font-size:14px;color:var(--muted)}
 .typeswitch button[aria-pressed="true"][data-t="expense"]{background:var(--expense-soft);color:var(--expense)}
@@ -163,11 +166,11 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 
 /* tablet */
 @media (min-width:640px){
-  .summary{grid-template-columns:repeat(3,1fr)}
+  .summary{grid-template-columns:repeat(3,minmax(0,1fr))}
   .summary .bal{grid-column:auto}
   .stat.bal .v{font-size:24px}
   .row2{grid-template-columns:1fr 1fr}
-  .insights{grid-template-columns:1fr 1fr}
+  .insights{grid-template-columns:repeat(2,minmax(0,1fr))}
   .insights .wide{grid-column:1/-1}
   .overlay{align-items:center}
   .sheet{border-radius:22px;padding:18px 22px 22px}
@@ -231,7 +234,9 @@ button.sync:hover{background:var(--surface-2);color:var(--ink)}
 .member-table tbody tr:hover{background:var(--surface-2)}
 .member-table tbody tr.active{background:var(--accent-soft)}
 .member-table tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.member-table td:first-child{font-weight:600}
+.member-table td:first-child{font-weight:600;white-space:normal;word-break:keep-all;overflow-wrap:anywhere}
+/* 좁은 휴대폰 + 큰 금액: 이름 칸이 줄바꿈되고 건수는 아래 줄로, 글자도 조금 작게 (표가 화면 밖으로 넘치지 않게) */
+@media (max-width:420px){ .member-table{font-size:13px} .member-table th,.member-table td{padding:8px 4px} .member-table .cnt{display:block;margin-left:0} }
 .member-table .cnt{font-size:11.5px;font-weight:400;color:var(--muted);margin-left:6px}
 .member-table .pct{color:var(--muted);font-size:13px}
 .member-table .inc{color:var(--income)}
@@ -588,7 +593,7 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .nb-close{flex:none;width:40px;font-size:20px;color:var(--muted)}
 @keyframes nb-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion:reduce){.notify-banner{animation:none}}
-.notify-settings .ns-sec{display:grid;gap:8px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.notify-settings .ns-sec{display:grid;grid-template-columns:minmax(0,1fr);gap:8px;padding-bottom:14px;border-bottom:1px solid var(--line)}
 .notify-settings .ns-sec:last-child{border-bottom:0;padding-bottom:0}
 .notify-settings h4{font-size:14.5px;color:var(--ink);display:flex;align-items:center;gap:8px}
 .ns-badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:99px;background:var(--surface-2);color:var(--muted)}
@@ -613,6 +618,7 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .invite-box{display:grid;gap:8px}
 .invite-code{font-size:26px;font-weight:800;letter-spacing:.08em;text-align:center;padding:14px;border-radius:14px;background:var(--accent-soft);color:var(--accent);font-variant-numeric:tabular-nums;user-select:all}
 .join-row{display:flex;gap:8px}
+.join-row input{flex:1;min-width:0}
 .join-row input{flex:1;min-width:0;padding:11px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:16px;text-transform:uppercase;letter-spacing:.05em}
 .join-confirm{display:grid;gap:10px}
 .join-name{margin-left:6px;width:120px;padding:6px 8px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);font-size:14px}
@@ -654,7 +660,7 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .grid > .fav-bar{min-width:0}
 
 /* ===== 댓글 ===== */
-.comments{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:10px}
+.comments{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .comments h4{font-size:14px;color:var(--ink)}
 .comment-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;max-height:260px;overflow-y:auto}
 .comment-list li{padding:9px 12px;border-radius:12px;background:var(--surface-2);max-width:88%}
@@ -664,7 +670,7 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .cm-del{margin-left:auto;font-size:12px;color:var(--muted);text-decoration:underline}
 .comment-list p{margin-top:3px;font-size:14px;line-height:1.45;white-space:pre-wrap;word-break:break-word}
 .comment-form{display:flex;gap:8px}
-.comment-form input{flex:1;min-width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:15px}
+.comment-form input{flex:1;min-width:0;width:0;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:15px}
 .comment-off{margin-top:14px}
 .cm-mark{margin-left:6px;font-size:12px;color:var(--muted);white-space:nowrap}
 .notify-banner.nb-comment{border-left:4px solid var(--c4)}

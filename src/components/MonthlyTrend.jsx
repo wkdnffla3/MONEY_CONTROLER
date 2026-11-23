@@ -3,7 +3,8 @@ import { prevMonth, sumByType, won, ymKey } from '../lib/format';
 
 const W = 640, H = 210, PAD_L = 8, PAD_R = 8, PAD_T = 18, PAD_B = 34;
 const short = (n) => {
-  if (n >= 100000000) return `${(n / 100000000).toFixed(n >= 1000000000 ? 0 : 1)}억`;
+  // 반올림해서 1억이 되는 금액(9,999.5만 이상)도 "10,000만"이 아니라 억으로
+  if (n >= 99995000) return `${(n / 100000000).toFixed(n >= 999500000 ? 0 : 1)}억`;
   if (n >= 10000) return `${Math.round(n / 10000).toLocaleString('ko-KR')}만`;
   return n ? n.toLocaleString('ko-KR') : '0';
 };

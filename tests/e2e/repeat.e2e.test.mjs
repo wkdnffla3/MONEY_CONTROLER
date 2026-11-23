@@ -253,3 +253,59 @@ describe('내역에서 반복 켜기·끄기', () => {
     await ctx.close();
   });
 });
+
+test('구독 발견 → 반복 등록: 반복 내역이 50개를 넘어도 100개까지 등록됨', async () => {
+  const many = Array.from({ length: 60 }, (_, i) => ({ id: `q${i}`, type: 'expense', amount: 1000 + i, category: '교육', memo: `학원${i}`, memberId: null, day: 28, start: '2026-11', end: null, last: '2026-11', active: true }));
+  const t = (id, date) => ({ id, user_id: 'u1', type: 'expense', amount: 14900, category: '문화·여가', memo: '유튜브', date, member_id: null, tags: [], card_id: null, inst_months: 1, created_at: 1 });
+  const { ctx, page, errs } = await open(env, {
+    seed: seedScript({ transactions: [t('y1', '2026-08-10'), t('y2', '2026-09-10'), t('y3', '2026-10-10'), t('y4', '2026-11-10')], settingsRow: settings({ recurring: many }) }),
+    contextOptions: KST, beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-18T10:00:00+09:00') }),
+  });
+  await page.click('.sub-finder button:has-text("반복 등록")');
+  await page.waitForTimeout(800);
+  assert.match(norm(await page.innerText('.toast')), /반복 내역으로 등록/);
+  assert.equal((await db(page)).settings[0].recurring.length, 61);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+test('자정이 지나면 서버를 먼저 확인: 다른 기기가 이미 기록하고 고친 이번 달 반복 내역을 덮어쓰지 않음', async () => {
+  const rule = { id: 'r1', type: 'expense', amount: 55000, category: '식비', memo: '통신비', memberId: null, day: 1, start: '2026-10', end: null, last: '2026-11', active: true };
+  const { ctx, page, errs } = await open(env, {
+    seed: seedScript({ settingsRow: settings({ recurring: [rule] }) }), path: '#list', contextOptions: KST,
+    beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-30T23:59:00+09:00') }),
+  });
+  await page.waitForTimeout(500);
+  // 다른 기기(먼저 자정을 넘김)가 12월 내역을 기록하고 금액을 고침 — 이 기기엔 아직 실시간 알림이 안 옴
+  await page.evaluate(() => {
+    const db = JSON.parse(sessionStorage.getItem('__fakedb'));
+    db.transactions.push({ id: 'rec-r1-2026-12', user_id: 'u1', type: 'expense', amount: 61000, category: '식비', memo: '통신비(인상)', date: '2026-12-01', member_id: null, tags: [], card_id: null, inst_months: 1, created_at: 1 });
+    db.settings[0].recurring = [{ ...db.settings[0].recurring[0], last: '2026-12' }];
+    sessionStorage.setItem('__fakedb', JSON.stringify(db));
+  });
+  await page.clock.runFor(70_000);
+  await page.waitForTimeout(1200);
+  const d = await db(page);
+  const t = d.transactions.filter((x) => x.id === 'rec-r1-2026-12');
+  assert.equal(t.length, 1);
+  assert.equal(t[0].amount, 61000);
+  assert.equal(t[0].memo, '통신비(인상)');
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+test('자정이 지나면(다른 기기 기록 없음) 서버를 받은 뒤 이번 달 반복 내역 기록', async () => {
+  const rule = { id: 'r1', type: 'expense', amount: 55000, category: '식비', memo: '통신비', memberId: null, day: 1, start: '2026-10', end: null, last: '2026-11', active: true };
+  const { ctx, page, errs } = await open(env, {
+    seed: seedScript({ settingsRow: settings({ recurring: [rule] }) }), path: '#list', contextOptions: KST,
+    beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-30T23:59:00+09:00') }),
+  });
+  await page.waitForTimeout(500);
+  await page.clock.runFor(70_000);
+  await page.waitForTimeout(1200);
+  const d = await db(page);
+  assert.equal(d.transactions.filter((x) => x.id === 'rec-r1-2026-12').length, 1);
+  assert.equal(d.settings[0].recurring[0].last, '2026-12');
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});

@@ -45,7 +45,7 @@ src/
 public/sw.js             서비스워커: 화면 network-first, 빌드 파일 cache-first(설치 때 나뉜 화면 파일까지 import를 따라가 모두 저장), push / notificationclick
 src/lib/lazyScreens.js   첫 화면에 필요 없는 화면 목록(React.lazy) + 한가할 때 미리 받기
 src/components/ScreenBoundary.jsx  나뉜 화면 불러오는 중 표시 / 실패 시 "새 버전·새로고침" 안내
-supabase/schema.sql      새 프로젝트용 전체 스키마 (002~016 내용 포함)
+supabase/schema.sql      새 프로젝트용 전체 스키마 (002~017 내용 포함)
 supabase/00N_*.sql       기존 DB용 업데이트 (번호 순서대로, 여러 번 실행해도 안전하게 작성)
 supabase/functions/push-notify/index.ts   웹 푸시 발송 Edge Function (Deno)
 supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과 함수가 같은 파일을 import
@@ -133,6 +133,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 009_report_schedule | 리포트 예약 (선택, 프로젝트ID·비밀 값을 채워서 실행) | 008, 함수 배포 |
 | 010_history_comments | `activity_log` 트리거, `tx_comments`, `dismissed_subs` | 008 |
 | 011_memo_200 | 메모 200자, 반복·즐겨찾기 설정 크기 한도 상향 (예전 설치마다 다른 제약 이름을 정의로 찾아 교체) | 008 |
+| 017_versions | 동시에 고칠 때 덮어쓰기 방지. `transactions`·`shopping_items.version`(트리거 `bump_version`: 내용이 바뀔 때만 +1, 앱이 못 바꿈, `rename_category` 안의 카테고리만 변경은 그대로), `settings.ver` 칸별 버전(트리거 `bump_settings_ver`), `save_setting(col, value, base)`(security invoker, 다르면 `LV409 version_conflict`). `log_activity`는 `version` 제외. 앱: 작업에 `base`(본 버전, `withBase`) → 내역·물품은 `insert`(base null)/`update…eq(version)`/`delete…eq(version)`, 설정은 `save_setting`. 0줄·23505·LV409면 서버 줄을 다시 읽어 내용이 같으면 성공(응답 유실), 다르면 충돌 → 작업을 빼고 다시 불러온 뒤 `onConflict`(App 알림 "내 것으로 저장"·"다시 살리기"·"그래도 지우기" → `retryConflict`). 자동 작업(반복 내역 기록)은 `soft`로 조용히 뺌. 버전 표는 서버 상태 `_ver`(캐시에도 보관). 017 전이면 예전처럼 upsert | 016 |
 | 016_delete_account | `delete_account()` 회원 탈퇴(security definer, `auth.users`에서 본인 삭제 → cascade). 내 가계부에 다른 참여자가 있으면 `ledger_has_members`로 거절. `tx_comments.author`는 cascade, `activity_log.actor`는 set null | 008 |
 | 015_recurring_100 | 반복 내역 최대 100개(가계부 하나당). 반복 내역 검사 제약을 정의로 찾아 교체. 015 전 DB에 51개 이상을 보내면 앱이 `recurring` 작업을 보관하고 015 안내(`recurBlockedRef`). 011도 100으로 맞춰 다시 실행해도 안전 | 011 |
 | 014_restore_backup | `restore_backup(p_tx, p_items, p_overwrite)` 백업 복원(security invoker, 1000건 한도, 앱은 300건씩). 가계부 ID는 항상 `current_ledger()`. 새로 넣는 줄은 `ledger.skip_log='restore'`로 기록 생략, 덮어쓰기(UPDATE)는 기록. 넣는 줄의 `device_id`는 비어 있어 푸시 함수가 알리지 않음 | 013 |
@@ -148,7 +149,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 - `tests/unit`: 순수 함수.
 - `tests/edge`: Edge Function을 esbuild로 묶어 Node에서 가짜 web-push·DB로 실행.
 - `tests/e2e`: `src/`를 esbuild로 묶되 `@supabase/supabase-js`만 `fake-supabase.js`로 바꾼 앱을 Playwright(크로미움)로 조작. 화면 구성, 메모·링크·자정, 오프라인·재전송·중복 방지, 카테고리 이름 변경, 011 전 DB 보관, 공유 참여, 댓글, 변경 기록·되살리기, 서비스 워커 오프라인.
-- `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·푸시 주소 제한(012)·이름 일괄 변경(013)·백업 복원(014)·반복 100개(015)·회원 탈퇴(016)·리포트 예약.
+- `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·푸시 주소 제한(012)·이름 일괄 변경(013)·백업 복원(014)·반복 100개(015)·회원 탈퇴(016)·버전 확인(017)·리포트 예약.
 - 바꿀 때 같이 고칠 것: 새 DB 칸·테이블 → `fake-supabase.js`의 `MISSING`/`tableMissing`와 SQL 테스트. 화면 문구·클래스 이름 → e2e 선택자. 새 마이그레이션 → `run.mjs`의 `SUITES`.
 - **아직 실제 Supabase 클라우드 위에서의 통합 점검은 자동화하지 않았다.** 크게 바꾼 뒤에는 통합 점검 체크리스트(계정 두 개로 공유·댓글·푸시·오프라인 입력)를 직접 확인하길 권한다.
 

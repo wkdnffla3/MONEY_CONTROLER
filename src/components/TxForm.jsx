@@ -81,7 +81,9 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
     submitting.current = true;
     setBusy(true);
     try {
-      const instBlocked = type === 'expense' && cardId && inst > 1;
+      // 지운 카드가 골라져 있던 내역(수정): 현금으로, 할부도 일시불로
+      const card = type === 'expense' && cardId && cards.some((c) => c.id === cardId) ? cardId : null;
+      const instBlocked = card && inst > 1;
       // 수정: 이미 반복 중이면 그대로 둘 수 있음(가득 차도). 새로 켜는 건 자리가 있을 때만
       const repeatOn = initial && repeatRule ? repeat : repeat && canRepeat && !instBlocked;
       await onSubmit({
@@ -93,8 +95,8 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
         memberId: validId(memberId),
         tags,
         // 수입에는 카드·할부 없음
-        cardId: type === 'expense' && cardId && cards.some((c) => c.id === cardId) ? cardId : null,
-        inst: type === 'expense' && cardId ? inst : 1,
+        cardId: card,
+        inst: card ? inst : 1,
         createdAt: initial?.createdAt || Date.now(),
       }, { repeat: repeatOn });
       if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); setTags([]); setInst(1); setRepeat(false); }

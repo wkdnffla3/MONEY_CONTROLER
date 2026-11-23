@@ -55,9 +55,18 @@ export default function CategoryEditor({ counts, onSave }) {
 
   const submit = (e) => {
     e.preventDefault();
+    // 새 이름만 쓰고 '추가'를 안 누른 채 저장해도 그 카테고리까지 저장 (말없이 사라지지 않게)
+    const pending = newName.trim();
+    let src = draft;
+    if (pending && !draft[type].some((c) => c.name.trim() === pending)) {
+      if (draft[type].length >= MAX_CATEGORIES) { setError(`최대 ${MAX_CATEGORIES}개까지 만들 수 있어요.`); return; }
+      src = { ...draft, [type]: [...draft[type], { name: pending.slice(0, MAX_CATEGORY_NAME), icon: [...(newIcon.trim() || '🏷️')].slice(0, 2).join(''), orig: null }] };
+      setDraft(src);
+      setNewName('');
+    }
     const out = {};
     for (const [t, label] of TYPES) {
-      const items = draft[t].map((c) => ({ name: c.name.trim(), icon: (c.icon || '').trim() || '🏷️' }));
+      const items = src[t].map((c) => ({ name: c.name.trim(), icon: (c.icon || '').trim() || '🏷️' }));
       if (!items.length) { setError(`${label} 카테고리가 하나는 있어야 해요.`); setType(t); return; }
       if (items.some((c) => !c.name)) { setError(`${label}에 이름이 빈 카테고리가 있어요.`); setType(t); return; }
       if (new Set(items.map((c) => c.name)).size !== items.length) { setError(`${label}에 같은 이름이 두 번 있어요.`); setType(t); return; }

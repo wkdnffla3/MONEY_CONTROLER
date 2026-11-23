@@ -53,3 +53,20 @@ test('고른 카드를 지우면 그 조건은 풀림 (안 보이는 조건으�
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+
+test('기간·금액을 거꾸로 넣어도 찾아짐', async () => {
+  const { ctx, page, errs } = await open(env, { seed, path: '#list' });
+  await openSearch(page);
+  await page.click('.adv-search .chip:has-text("직접")');
+  await page.fill('.adv-search input[aria-label="시작일"]', `${ym}-28`);
+  await page.fill('.adv-search input[aria-label="끝일"]', `${ym}-01`);
+  await page.waitForTimeout(200);
+  assert.equal(await count(page), 2);
+  await page.click('.adv-more summary');
+  await page.fill('.adv-search input[aria-label="최소 금액"]', '999999');
+  await page.fill('.adv-search input[aria-label="최대 금액"]', '1');
+  await page.waitForTimeout(200);
+  assert.equal(await count(page), 2);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});

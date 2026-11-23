@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { coalesce, applyQueue, removeOp, renameOps, isRetryable, isValidOp, isValidTx, isValidMembers, isSchemaError } from '../../src/lib/outbox.js';
+import { coalesce, applyQueue, removeOp, renameOps, isRetryable, isValidOp, isValidTx, isValidMembers, isSchemaError, withBase, rebase, setVer } from '../../src/lib/outbox.js';
 import { summarizeByMember, filterByOwner, sharePercents, SHARED } from '../../src/lib/members.js';
 let q = [];
 const up = (id, memo, opId) => ({ opId, kind: 'upsert', id, data: { memo } });
@@ -120,5 +120,38 @@ assert.equal(S.rows.reduce((a, r) => a + r.pct, 0), 100);
   ops = renameOps([{ type: 'income', from: '식비', to: '교통' }, { type: 'expense', from: '교통', to: '식비' }], id);
   assert.equal(ops.length, 2);
   assert.ok(ops.flatMap((o) => [o.from, o.to]).every((n) => n.length <= 20));
+}
+// 017 버전 확인: base 붙이기·이어받기·보낸 뒤 맞추기
+{
+  const ver = { 'tx:a': 3, 'item:i': 2, 'set:budget': 5 };
+  assert.equal(withBase({ opId: '1', kind: 'upsert', id: 'a', data: {} }, [], ver).base, 3);
+  assert.equal(withBase({ opId: '1', kind: 'upsert', id: 'new', data: {} }, [], ver).base, null); // 서버에 없음 = 새로 추가
+  assert.equal(withBase({ opId: '1', kind: 'delete', id: 'a' }, [], ver).base, 3);
+  assert.equal(withBase({ opId: '1', kind: 'itemDel', id: 'i' }, [], ver).base, 2);
+  assert.equal(withBase({ opId: '1', kind: 'cards', value: [] }, [], ver).base, 0); // 설정 칸이 한 번도 안 바뀜
+  assert.equal(withBase({ opId: '1', kind: 'budget', value: 1 }, [], ver).base, 5);
+  assert.equal('base' in withBase({ opId: '1', kind: 'upsert', id: 'a', data: {} }, [], undefined), false); // 017 전: 확인 없이
+  assert.equal('base' in withBase({ opId: '1', kind: 'renameCat', type: 'expense', from: 'a', to: 'b' }, [], ver), false);
+  // 오프라인에서 여러 번 고침 → 처음 본 버전 이어받음
+  const p1 = { opId: 'p1', kind: 'upsert', id: 'a', data: {}, base: 3 };
+  assert.equal(withBase({ opId: '2', kind: 'upsert', id: 'a', data: {} }, [p1], { 'tx:a': 9 }).base, 3);
+  assert.equal(withBase({ opId: '2', kind: 'delete', id: 'a' }, [{ ...p1, base: null }], ver).base, null); // 아직 안 올린 새 내역 → 그냥 지움
+  assert.equal(withBase({ opId: '2', kind: 'upsert', id: 'a', data: {}, base: 7 }, [p1], ver).base, 7); // 이미 붙어 있으면 그대로
+  // 보내는 사이에 또 고친 작업 → 새 버전 기준으로
+  const q2 = [{ opId: 'x', kind: 'upsert', id: 'a', data: {}, base: 3 }, { opId: 'y', kind: 'upsert', id: 'b', data: {}, base: 3 }];
+  const r = rebase(q2, { opId: 'sent', kind: 'upsert', id: 'a', base: 3 }, 4);
+  assert.deepEqual(r.map((o) => o.base), [4, 3]);
+  assert.deepEqual(rebase(q2, { opId: 'sent', kind: 'upsert', id: 'a', base: 3 }, undefined), q2);
+  assert.deepEqual(rebase([{ opId: 'x', kind: 'upsert', id: 'a', data: {}, base: null }], { opId: 's', kind: 'upsert', id: 'a', base: null }, 1)[0].base, 1);
+  // 버전 표
+  const st = { tx: {}, _ver: { 'tx:a': 3 } };
+  assert.deepEqual(setVer(st, { kind: 'upsert', id: 'a' }, 4)._ver, { 'tx:a': 4 });
+  assert.deepEqual(setVer(st, { kind: 'delete', id: 'a' }, null)._ver, {});
+  assert.equal(setVer({ tx: {} }, { kind: 'upsert', id: 'a' }, 4)._ver, undefined);
+  // 형식 검사
+  assert.ok(isValidOp({ opId: '1', kind: 'delete', id: 'a', base: 2 }));
+  assert.ok(isValidOp({ opId: '1', kind: 'delete', id: 'a', base: null }));
+  assert.equal(isValidOp({ opId: '1', kind: 'delete', id: 'a', base: -1 }), false);
+  assert.equal(isValidOp({ opId: '1', kind: 'delete', id: 'a', base: '2' }), false);
 }
 console.log('outbox unit tests: all passed');

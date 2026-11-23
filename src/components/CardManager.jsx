@@ -11,6 +11,7 @@ const fmt = (s) => { const [, m, d] = s.split('-').map(Number); return `${m}월 
 /** 신용카드 등록·수정·삭제. 바꿀 때마다 바로 저장 onSave(목록, 안내 문구) */
 export default function CardManager({ cards, usage, onSave }) {
   const [editing, setEditing] = useState(null); // null | 'new' | card id
+  const [askDel, setAskDel] = useState(null); // 내역이 있는 카드는 한 번 더 눌러야 삭제 (실수로 누르면 되돌릴 수 없음)
 
   if (editing) {
     const card = editing === 'new' ? null : cards.find((c) => c.id === editing);
@@ -34,12 +35,23 @@ export default function CardManager({ cards, usage, onSave }) {
               <div className="ic" style={{ background: colorVar(c.color), color: '#fff' }}>💳</div>
               <div className="meta">
                 <div className="cat">{c.name}</div>
-                <div className="memo">매달 {dayLabel(c.payDay)} 결제 · {dayLabel(c.closeDay)} 마감{usage[c.id] ? ` · 내역 ${usage[c.id]}건` : ''}</div>
+                <div className="memo">{askDel === c.id
+                  ? <span className="warn-text">내역 {usage[c.id]}건이 "현금·기타"로 바뀌어 보이고 카드 청구 예정에서 빠져요</span>
+                  : <>매달 {dayLabel(c.payDay)} 결제 · {dayLabel(c.closeDay)} 마감{usage[c.id] ? ` · 내역 ${usage[c.id]}건` : ''}</>}</div>
               </div>
               <div />
               <div className="rule-actions">
                 <button type="button" className="linkbtn" onClick={() => setEditing(c.id)}>수정</button>
-                <button type="button" className="linkbtn danger-text" onClick={() => onSave(cards.filter((x) => x.id !== c.id), '카드를 삭제했어요')}>삭제</button>
+                {askDel === c.id ? (
+                  <>
+                    <button type="button" className="linkbtn" onClick={() => setAskDel(null)}>취소</button>
+                    <button type="button" className="linkbtn danger-text" onClick={() => { setAskDel(null); onSave(cards.filter((x) => x.id !== c.id), '카드를 삭제했어요'); }}>정말 삭제</button>
+                  </>
+                ) : (
+                  <button type="button" className="linkbtn danger-text" onClick={() => (usage[c.id]
+                    ? setAskDel(c.id)
+                    : onSave(cards.filter((x) => x.id !== c.id), '카드를 삭제했어요'))}>삭제</button>
+                )}
               </div>
             </li>
           ))}
