@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { fetchAll } from '../lib/fetchAll';
 import { isSchemaError, newId } from '../lib/outbox';
 
 const COLS = 'id,tx_id,author,author_name,body,created_at';
@@ -19,7 +20,7 @@ export function useComments(ledgerId, uid, { onRemote } = {}) {
   const load = useCallback(async () => {
     if (!ledgerId || !supabase) return;
     const my = ++seq.current;
-    const { data, error } = await supabase.from('tx_comments').select(COLS).eq('user_id', ledgerId);
+    const { data, error } = await fetchAll(() => supabase.from('tx_comments').select(COLS).eq('user_id', ledgerId));
     if (my !== seq.current) return;
     if (error) { if (isSchemaError(error)) setSupported(false); return; }
     setSupported(true);

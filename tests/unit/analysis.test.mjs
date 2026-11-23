@@ -152,5 +152,14 @@ console.log('analysis unit tests: all passed');
   assert.ok(isValidRecurring([rule]));
   assert.deepEqual(dueMonths(rule, today), []);
   assert.deepEqual(dueMonths(rule, new Date(2026, 11, 16)).map((x) => x.date), ['2026-12-15']);
+  // 이번 달 결제일이 아직 안 온 구독(마지막 = 지난달): 이번 달 결제일에 기록돼야 함 (건너뛰면 안 됨)
+  {
+    const late = [tx('y1', '2026-08-25', 14900, '구독', '유튜브'), tx('y2', '2026-09-25', 14900, '구독', '유튜브'), tx('y3', '2026-10-25', 14900, '구독', '유튜브')];
+    const [sg] = detectSubscriptions(late, [], [], today); // 오늘 11월 20일
+    assert.equal(sg.label, '유튜브');
+    const r2 = ruleFromSuggestion(sg, 'r-yt', today);
+    assert.deepEqual(dueMonths(r2, today), []); // 20일: 아직
+    assert.deepEqual(dueMonths(r2, new Date(2026, 10, 25)).map((x) => x.date), ['2026-11-25']);
+  }
   console.log('subscription unit tests: all passed');
 }

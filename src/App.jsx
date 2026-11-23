@@ -80,7 +80,12 @@ export default function App() {
   const ledger = useLedger(ledgerId, { onRemote: (n) => notifyRef.current?.(n), accountId: auth.user?.id, onForbidden: household.refresh });
   const notifier = useNotifier(auth.user?.id, ledger.members);
   // 내역 댓글 (다른 사람이 쓴 새 댓글은 알림으로)
-  const comments = useComments(ledgerId, auth.user?.id, { onRemote: (n) => notifyRef.current?.(n) });
+  // 실시간 댓글 알림 배너도 쓴 사람 이름을 계정 기준으로 (commentAuthorRef: 아래 commentAuthor)
+  const commentAuthorRef = useRef(null);
+  const comments = useComments(ledgerId, auth.user?.id, {
+    onRemote: (n) => notifyRef.current?.(n?.record && commentAuthorRef.current
+      ? { ...n, record: { ...n.record, author_name: commentAuthorRef.current(n.record) } } : n),
+  });
   notifyRef.current = notifier.notify;
   const { toast, show, hide } = useToast();
 
@@ -340,6 +345,17 @@ export default function App() {
   const addComment = (txId, body) => comments.add(txId, body, myName)
     .catch((e) => { show(`댓글을 보내지 못했어요 · ${koError(e)}`); throw e; });
   const deleteComment = (id) => comments.remove(id).then(() => show('댓글을 지웠어요')).catch((e) => show(`지우지 못했어요 · ${koError(e)}`));
+
+  // 댓글 쓴 사람 이름: 보낸 이름(author_name)은 바꿔 보낼 수 있으므로 공유 참여자는 계정에 연결된 사람 이름(없으면 이메일 앞부분).
+  // 가계부 주인·나·알 수 없는 계정은 보낸 이름 그대로
+  const commentAuthor = (c) => {
+    if (c.author === uid) return c.author_name;
+    const p = household.people.find((x) => x.userId === c.author);
+    if (!p || p.owner) return c.author_name;
+    const person = p.personId && members.find((m) => m.id === p.personId)?.name;
+    return person || (p.email ? p.email.split('@')[0] : c.author_name);
+  };
+  commentAuthorRef.current = commentAuthor;
 
   // ---- 변경 기록에서 되살리기 / 되돌리기 ----
   const restoreFromLog = async (e, kind) => {
@@ -618,7 +634,7 @@ export default function App() {
             onDelete={() => deleteTx(editing.id)}
           />
           <button type="button" className="btn fav-add-btn" onClick={() => favoriteFromTx(editing)}>⭐ 즐겨찾기에 추가</button>
-          <CommentThread comments={comments.byTx[editing.id] || []} uid={uid} supported={comments.supported} online={online}
+          <CommentThread comments={comments.byTx[editing.id] || []} uid={uid} supported={comments.supported} online={online} nameOf={commentAuthor}
             onAdd={(body) => addComment(editing.id, body)} onDelete={deleteComment} />
         </Sheet>
       )}

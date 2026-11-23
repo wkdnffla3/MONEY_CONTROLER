@@ -24,7 +24,8 @@ const { sent } = await import(mock('webpush-mock.mjs'));
 await import(pathToFileURL(out).href);
 const call = (body, secret = 's3cret', method = 'POST') => handler(new Request('http://x/', { method, headers: secret ? { 'x-webhook-secret': secret } : {}, body: method === 'POST' ? JSON.stringify(body) : undefined })).then(async (r) => ({ status: r.status, body: await r.json() }));
 const L = 'ledger-a', L2 = 'ledger-b';
-db.settings.push({ user_id: L, members: [{ id: 'm1', name: '민지', color: 0 }], budget: 400000 });
+db.settings.push({ user_id: L, members: [{ id: 'm1', name: '민지', color: 0 }, { id: 'm2', name: '준호', color: 1 }], budget: 400000 });
+db.ledger_members.push({ user_id: 'acct-writer', ledger_id: L, person_id: 'm2' }, { user_id: 'acct-noperson', ledger_id: L, person_id: null });
 const sub = (id, ledger, dev, prefs = {}) => ({ id, user_id: ledger, device_id: dev, endpoint: `https://fcm.googleapis.com/fcm/send/${id}`, p256dh: 'p', auth: 'a', prefs });
 db.push_subscriptions.push(sub('s1', L, 'dev1'), sub('s2', L, 'dev2'), sub('s3', L, 'dev3', { tx: false }), sub('gone1', L, 'dev4'), sub('s5', L2, 'dev5'));
 const rec = { id: 't1', user_id: L, type: 'expense', amount: 12000, category: '식비', memo: '점심', member_id: 'm1', device_id: 'dev1' };
@@ -101,6 +102,14 @@ assert.ok(sent.length >= 1);
 assert.equal(sent[0].msg.title, '준호님이 댓글을 남겼어요');
 assert.equal(sent[0].msg.url, '/?tx=t1');
 console.log('ok 8. 댓글: 쓴 사람 계정의 기기 모두 제외 →', JSON.stringify(r.body));
+// 댓글 쓴 사람 이름은 계정 기준: 다른 이름을 보내도 그 계정의 "사람" 이름으로, 사람 연결이 없으면 "참여자", 주인은 보낸 이름
+for (const [author, sentName, want] of [['acct-writer', '민지', '준호'], ['acct-noperson', '민지', '참여자'], [L, '엄마', '엄마'], ['acct-stranger', '민지', '참여자']]) {
+  sent.length = 0;
+  await call({ type: 'INSERT', table: 'tx_comments', record: { id: `c-${author}`, user_id: L, tx_id: 't1', author, author_name: sentName, body: '확인' } });
+  assert.ok(sent.length >= 1);
+  assert.equal(sent[0].msg.title, `${want}님이 댓글을 남겼어요`, author);
+}
+console.log('ok 8-1. 댓글 이름 바꿔치기 막음 (계정에 연결된 사람 이름 사용)');
 // 실제 푸시 서비스가 아닌 주소: 보내지 않고 지움 (012 이전에 저장됐거나 조작된 값)
 sent.length = 0;
 for (const [id, endpoint] of [['evil1', 'https://attacker.example/collect'], ['evil2', 'https://fcm.googleapis.com.evil.io/x'], ['evil3', 'http://fcm.googleapis.com/fcm/send/x'], ['evil4', 'https://169.254.169.254/latest']]) {
