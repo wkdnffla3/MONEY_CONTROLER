@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount, resumeRule } from '../../src/lib/recurring.js';
+import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount, resumeRule, ruleOfTx, repeatMarker } from '../../src/lib/recurring.js';
 import { csvCell, toCsv } from '../../src/lib/csv.js';
 import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../../src/lib/shopping.js';
 import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../../src/lib/outbox.js';
@@ -140,5 +140,22 @@ assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' })
   assert.deepEqual(dueMonths(r, today), []);
   assert.deepEqual(dueMonths(r, new Date(2026, 10, 25)).map((x) => x.date), ['2026-11-25']);
   assert.deepEqual(dueMonths(resumeRule({ ...base, day: 5 }, today), new Date(2026, 11, 5)).map((x) => x.date), ['2026-12-05']);
+}
+// 내역에서 반복 켜기·끄기: 내역 ↔ 규칙 연결
+{
+  const d = { type: 'expense', amount: 9900, category: '문화·여가', memo: '구독', date: '2026-10-07', memberId: null };
+  const a = ruleFromTx(d, 'ab', 'tx-old');
+  const b = ruleFromTx(d, 'ab-c');
+  assert.equal(a.srcTx, 'tx-old');
+  assert.equal('srcTx' in b, false);
+  assert.ok(isValidRecurring([a, b]));
+  assert.equal(isValidRecurring([{ ...a, srcTx: 5 }]), false);
+  assert.equal(ruleOfTx([a, b], 'tx-old'), a);
+  assert.equal(ruleOfTx([a, b], 'rec-ab-c-2026-11'), b); // 규칙 ID에 - 가 있어도 정확히
+  assert.equal(ruleOfTx([a, b], 'rec-ab-2026-11'), a);
+  assert.equal(ruleOfTx([a, b], 'rec-zz-2026-11'), null); // 지운 규칙의 자동 내역
+  assert.equal(ruleOfTx([a, b], 'other'), null);
+  const mark = repeatMarker([a, b]);
+  assert.ok(mark('tx-old') && mark('rec-zz-2026-11') && !mark('other'));
 }
 console.log('feature unit tests: all passed');

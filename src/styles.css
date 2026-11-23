@@ -542,6 +542,8 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .share-items li button:focus-visible{outline:2px solid var(--accent)}
 .share-items .d{color:var(--muted);font-size:12px}
 .share-items .m{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.share-items .item-sort{display:flex;gap:6px;margin:2px 0 6px 2px}
+.share-items .item-sort .chip{padding:3px 10px;font-size:12px;min-height:0}
 .share-items .more{margin:4px 0 2px 6px;font-size:12.5px}
 .more-toggle{display:block;margin:10px auto 0;font-size:13px}
 .more-row{display:flex;justify-content:center;gap:16px}

@@ -16,7 +16,7 @@ const FILTERS = [['all', '전체'], ['expense', '지출'], ['income', '수입']]
  */
 import { hasLink } from '../lib/links';
 
-export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [], view = 'list', onView, ym, day, onDay, onSearch, commentCounts = {} }) {
+export default function TxList({ items, filter, onFilter, query, onQuery, onOpen, members = [], view = 'list', onView, ym, day, onDay, onSearch, commentCounts = {}, isRepeat = isRecurringTxId }) {
   const { cards } = useFormData();
   const visible = useMemo(() => {
     let list = items;
@@ -102,7 +102,7 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
                     {iconOf(cats, isInc ? 'income' : 'expense', t.category)}
                   </div>
                   <div className="meta">
-                    <div className="cat">{t.category}{isRecurringTxId(t.id) && <span className="rec-mark" title="반복 내역으로 자동 등록">🔁</span>}{isShoppingTxId(t.id) && <span className="rec-mark" title="장보기에서 결제 확정">🛒</span>}</div>
+                    <div className="cat">{t.category}{isRepeat(t.id) && <span className="rec-mark" title="매달 반복">🔁</span>}{isShoppingTxId(t.id) && <span className="rec-mark" title="장보기에서 결제 확정">🛒</span>}</div>
                     <div className="memo">
                       {members.length > 0 && (() => {
                         const m = findMember(members, t.memberId);

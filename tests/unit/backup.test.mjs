@@ -67,6 +67,15 @@ assert.ok(o1.tx.every(([id]) => /^rb-[0-9a-z]+$/.test(id) && id.length <= 64));
 assert.notDeepEqual(o1.tx.map(([id]) => id), planRestore(p.backup, EMPTY_STATE, { sameLedger: false, ledgerId: 'L3' }).tx.map(([id]) => id));
 const newA = o1.tx.find(([, d]) => d.amount === 1000)[0];
 assert.equal(o1.items[0][1].txId, newA);
+// 내역에서 반복으로 바꾼 규칙(srcTx)도 새 ID를 가리킴
+{
+  const rule = { id: 'r1', type: 'expense', amount: 1000, category: '식비', memo: '', memberId: null, day: 1, start: '2026-10', end: null, last: '2026-10', active: true, srcTx: 'a' };
+  const bb = { ...p.backup, settings: { ...p.backup.settings, recurring: [rule] } };
+  const rr = planRestore(bb, EMPTY_STATE, { sameLedger: false, ledgerId: 'L2' }).settings.find((x) => x.kind === 'recurring');
+  assert.equal(rr.value[0].srcTx, newA);
+  const same = planRestore(bb, EMPTY_STATE).settings.find((x) => x.kind === 'recurring');
+  assert.equal(same.value[0].srcTx, 'a');
+}
 const again = planRestore(p.backup, { ...EMPTY_STATE, tx: Object.fromEntries(o1.tx), items: Object.fromEntries(o1.items) }, { sameLedger: false, ledgerId: 'L2' });
 assert.equal(again.tx.length + again.items.length, 0);
 
