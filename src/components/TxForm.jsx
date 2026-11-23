@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useCategories } from '../lib/categories';
 import AddCategoryChip from './AddCategoryChip';
 import TagInput from './TagInput';
@@ -43,6 +43,14 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [repeat, setRepeat] = useState(false); // 새 내역: 매달 반복으로도 등록
+  // 새 내역 입력칸이 계속 떠 있는 동안(PC 오른쪽) 자정이 지나 기본 날짜가 바뀌면, 사용자가 날짜를 직접 바꾸지 않았을 때만 따라감
+  const lastDefault = useRef(defaultDate);
+  useEffect(() => {
+    if (initial || defaultDate === lastDefault.current) return;
+    const prev = lastDefault.current;
+    lastDefault.current = defaultDate;
+    setDate((d) => (d === prev ? defaultDate : d));
+  }, [defaultDate, initial]);
   const submitting = useRef(false); // 저장 버튼 연타로 같은 내역이 두 번 만들어지는 것 방지
 
   // 수정 중인 내역의 카테고리가 삭제된 경우에도 그대로 보이게(말없이 바뀌지 않게) 목록 끝에 붙여 둠

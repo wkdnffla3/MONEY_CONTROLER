@@ -33,6 +33,7 @@ export default function ExportForm({ allTx, members, cards = [], ym, onDone }) {
   };
 
   const download = () => {
+    if (scope === 'range' && (!from || !to)) { setError('시작 월과 끝 월을 모두 골라 주세요.'); return; }
     if (scope === 'range' && from > to) { setError('시작 월이 끝 월보다 늦어요.'); return; }
     if (!rows.length) { setError('내보낼 내역이 없어요.'); return; }
     const ok = downloadText(fileName(), buildTxCsv(rows, { members, cards }));

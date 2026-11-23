@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { searchTx } from '../lib/analysis';
 import { iconOf, useCategories } from '../lib/categories';
 import { downloadText } from '../lib/csv';
@@ -13,8 +13,10 @@ export { EMPTY_FILTERS };
 const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 function periodRange(period, from, to) {
   const now = new Date();
-  if (period === '1m') return [iso(new Date(now.getFullYear(), now.getMonth(), 1)), todayStr()];
-  if (period === '3m') return [iso(new Date(now.getFullYear(), now.getMonth() - 2, 1)), todayStr()];
+  // 끝은 이번 달 말일까지 (이번 달 안의 앞날짜로 미리 넣은 내역도 내역 화면처럼 포함)
+  const monthEnd = iso(new Date(now.getFullYear(), now.getMonth() + 1, 0));
+  if (period === '1m') return [iso(new Date(now.getFullYear(), now.getMonth(), 1)), monthEnd];
+  if (period === '3m') return [iso(new Date(now.getFullYear(), now.getMonth() - 2, 1)), monthEnd];
   if (period === 'year') return [`${now.getFullYear()}-01-01`, `${now.getFullYear()}-12-31`];
   if (period === 'range') return [from, to];
   return ['', ''];
@@ -40,6 +42,22 @@ export default function AdvancedSearch({ allTx, members, cards, tags, filters, o
 
   const catList = f.type === 'income' ? cats.income : f.type === 'expense' ? cats.expense
     : [...cats.expense, ...cats.income.filter((c) => !cats.expense.some((e) => e.name === c.name))];
+  // 화면에 칩이 없는 조건(지운·이름 바뀐 카테고리, 지운 카드·사람, 더는 안 쓰는 태그)은 빼기
+  // → 안 보이는 조건 때문에 결과가 0건으로 나오던 문제 방지
+  const memberIds = members.map((m) => m.id).join();
+  const cardIds = cards.map((c) => c.id).join();
+  const catNames = catList.map((c) => c.name).join('\u0001');
+  const tagKey = tags.join('\u0001');
+  useEffect(() => {
+    const okCats = f.categories.filter((c) => catList.some((x) => x.name === c));
+    const okTags = f.tags.filter((t) => tags.includes(t));
+    const okWho = f.who === 'all' || f.who === SHARED || members.some((m) => m.id === f.who) ? f.who : 'all';
+    const okCard = f.card === 'all' || f.card === 'cash' || cards.some((c) => c.id === f.card) ? f.card : 'all';
+    if (okCats.length !== f.categories.length || okTags.length !== f.tags.length || okWho !== f.who || okCard !== f.card) {
+      onFilters({ ...f, categories: okCats, tags: okTags, who: okWho, card: okCard });
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [f, catNames, tagKey, memberIds, cardIds]);
   const active = JSON.stringify(f) !== JSON.stringify(EMPTY_FILTERS);
 
   const [csvError, setCsvError] = useState('');
