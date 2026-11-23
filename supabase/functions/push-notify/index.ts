@@ -56,7 +56,17 @@ Deno.serve(async (req) => {
   const { data: st } = await admin.from('settings').select('members').eq('user_id', userId).maybeSingle();
   const members = Array.isArray(st?.members) ? st.members : [];
 
-  const note = buildNotification({ table, type, record, members });
+  // 댓글 쓴 사람 이름: 보낸 값(author_name)은 바꿔 보낼 수 있으므로, 공유 참여자는 계정에 연결된 "사람" 이름으로
+  // (가계부 주인이 쓴 댓글만 보낸 이름 그대로 — 주인이 정한 자기 이름)
+  let rec = record;
+  if (table === 'tx_comments' && typeof record.author === 'string' && record.author !== userId) {
+    const { data: m } = await admin.from('ledger_members').select('person_id')
+      .eq('user_id', record.author).eq('ledger_id', userId).maybeSingle();
+    const person = m?.person_id ? members.find((x: { id?: string; name?: string }) => x?.id === m.person_id)?.name : null;
+    rec = { ...record, author_name: person || '참여자' };
+  }
+
+  const note = buildNotification({ table, type, record: rec, members });
   if (!note) return json(200, { skipped: 'no notification for this entry' });
 
   // 댓글은 쓴 사람 계정의 모든 기기 제외(account_id, 008 이후), 나머지는 입력한 기기만 제외

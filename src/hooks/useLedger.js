@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRemember, supabase } from '../lib/supabase';
 import {
-  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isMemoLimitError, isRetryable, isSchemaError, newId, queueStorageKey, renameOps, readCache,
+  EMPTY_STATE, SETTINGS, applyQueue, clearUserData, coalesce, isMemoLimitError, isValidOp, isRetryable, isSchemaError, newId, queueStorageKey, renameOps, readCache,
   readQueue, removeOp, sameTarget, sanitizeSetting, writeCache, writeQueue,
 } from '../lib/outbox';
 import { planRecurring, ymOf } from '../lib/recurring';
@@ -9,6 +9,7 @@ import { planPurchase } from '../lib/shopping';
 import { useOnline } from './useOnline';
 import { getDeviceId, isOwn, markOwn } from '../lib/device';
 import { isMissingFn } from '../lib/household';
+import { fetchAll } from '../lib/fetchAll';
 
 export { newId };
 
@@ -152,6 +153,8 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   const sentLog = useRef([]);          // 최근 전송 완료한 작업 (불러오기와 겹칠 때 보정용)
   const failed = useRef(new Map());    // opId → 영구 실패 오류
   const loadSeq = useRef(0);
+  const activeLedger = useRef(userId); // 지금 보고 있는 가계부 (전환 직후 이전 가계부의 늦은 응답이 섞이지 않게)
+  const loadedFor = useRef(null);      // 이번 접속에서 서버 데이터를 받은 가계부
 
   // ---- 보낼 목록 읽기/쓰기 ----
   // 평소: 기기 저장소가 기준 (다른 탭과 공유)
@@ -172,6 +175,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
 
   // 서버 상태를 바꿀 때마다 기기 캐시도 갱신 (오프라인에서 다시 열어도 최신 내역이 보이게)
   const updateServer = useCallback((next) => {
+    if (activeLedger.current !== userId) return; // 다른 가계부로 바뀐 뒤 도착한 이전 가계부의 결과
     serverRef.current = next;
     setServer(next);
     if (userId) writeCache(userId, next, getRemember());
@@ -189,7 +193,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       const loadTx = async () => {
         let r;
         for (let i = 0; i < TX_COL_SETS.length; i += 1) {
-          r = await supabase.from('transactions').select(TX_COL_SETS[i]);
+          r = await fetchAll(() => supabase.from('transactions').select(TX_COL_SETS[i]));
           if (!isSchemaError(r.error)) { txLevel = i; return r; }
         }
         return r;
@@ -204,7 +208,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
       };
       // 장보기: 테이블이 없으면(005 전) 기기에 있던 목록을 그대로 둠
       const loadItems = async () => {
-        const r = await supabase.from('shopping_items').select(ITEM_COLS);
+        const r = await fetchAll(() => supabase.from('shopping_items').select(ITEM_COLS));
         if (isSchemaError(r.error)) { noItemsTable = true; return { data: null, error: null }; }
         return r;
       };
@@ -249,7 +253,9 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     }
     // 불러오는 사이에 전송이 끝난 작업은 응답에 빠져 있을 수 있으니 덧씌움
     const late = sentLog.current.filter((x) => x.at >= startedAt).map((x) => x.op);
+    if (activeLedger.current !== userId) return;
     updateServer(applyQueue(next, late));
+    loadedFor.current = userId;
     setError(null);
     setStatus('ok');
     setServerLoaded(true);
@@ -412,6 +418,8 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     storageBroken.current = false;
     setStorageFull(false);
     setServerLoaded(false);
+    activeLedger.current = userId;
+    loadedFor.current = null;
     if (!userId || !supabase) {
       memQueue.current = [];
       serverRef.current = EMPTY_STATE;
@@ -509,6 +517,10 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   /** 여러 작업을 한 번에 목록에 넣고 한 번만 전송 (카테고리 이름 변경, 반복 내역 등록 등) */
   const enqueueMany = useCallback(async (ops) => {
     if (!ops.length) return { synced: true };
+    // 형식이 틀린 작업은 보관 목록을 다시 읽을 때 걸러져 조용히 사라지므로, 넣기 전에 막고 알림
+    if (ops.some((o) => !isValidOp(o))) {
+      throw Object.assign(new Error('저장할 수 없는 값이 있어요. 입력값을 확인해 주세요.'), { code: 'invalid_op' });
+    }
     markOwn(ops.filter((o) => o.kind === 'upsert' || o.kind === 'item').map((o) => o.id));
     let q = getQ();
     for (const op of ops) q = coalesce(q, op);
@@ -555,16 +567,28 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     if (renames.length) {
       const map = (type, name) => renames.find((r) => r.type === type && r.from === name)?.to ?? name;
       ops.push(...renameOps(renames));
-      // 아직 못 보낸 내역 저장도 새 이름으로 고쳐 둠 (먼저 못 보내고 나중에 올라가도 옛 이름으로 되돌리지 않게)
-      setQ(getQ().map((o) => {
-        if (o.kind !== 'upsert') return o;
-        const to = map(o.data.type, o.data.category);
-        return to === o.data.category ? o : { ...o, data: { ...o.data, category: to } };
-      }));
+      // 아직 못 보낸 내역 저장: 새 이름으로 고친 뒤 이름 변경 작업 "뒤로" 옮김.
+      // (앞에 두면 먼저 올라간 뒤 이름 변경에 한 번 더 걸려서, 맞바꾸기 때 원래 이름으로 되돌아감)
+      const keep = [];
+      const moved = [];
+      for (const o of getQ()) {
+        const to = o.kind === 'upsert' ? map(o.data.type, o.data.category) : null;
+        if (to != null && to !== o.data.category) moved.push({ ...o, data: { ...o.data, category: to } });
+        else keep.push(o);
+      }
+      if (moved.length) setQ(keep);
+      // 카테고리 이름을 저장해 두는 다른 곳도 함께: 반복 내역·카테고리별 예산·즐겨찾기·장보기 물품
       const rec = v.recurring.map((r) => ({ ...r, category: map(r.type, r.category) }));
       if (rec.some((r, i) => r.category !== v.recurring[i].category)) ops.push({ opId: newId(), kind: 'recurring', value: rec });
       const cb = Object.fromEntries(Object.entries(v.catBudgets).map(([k, amt]) => [map('expense', k), amt]));
       if (Object.keys(cb).join() !== Object.keys(v.catBudgets).join()) ops.push({ opId: newId(), kind: 'catBudgets', value: cb });
+      const fav = v.favorites.map((f) => ({ ...f, category: map(f.type, f.category) }));
+      if (fav.some((f, i) => f.category !== v.favorites[i].category)) ops.push({ opId: newId(), kind: 'favorites', value: fav });
+      for (const [id, it] of Object.entries(v.items || {})) {
+        const to = map('expense', it.category);
+        if (to !== it.category) ops.push({ opId: newId(), kind: 'item', id, data: { ...it, category: to } });
+      }
+      ops.push(...moved);
     }
     return enqueueMany(ops);
   }, [enqueueMany, getQ, setQ]);
@@ -632,7 +656,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
   // 등록 후 규칙의 last가 올라가므로 이 효과가 다시 돌아도 같은 달을 또 만들지 않음.
   const recurringKey = JSON.stringify(view.recurring);
   useEffect(() => {
-    if (!userId || !serverLoaded) return;
+    if (!userId || !serverLoaded || loadedFor.current !== userId) return; // 전환 직후엔 아직 이전 가계부 상태
     const plan = planRecurring(viewRef.current.recurring, new Date());
     if (!plan.changed) return;
     const ops = plan.txs.map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data }));

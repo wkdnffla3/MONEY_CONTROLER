@@ -1,4 +1,4 @@
-export const db = { settings: [], push_subscriptions: [], transactions: [] };
+export const db = { settings: [], push_subscriptions: [], transactions: [], ledger_members: [] };
 export function createClient() {
   return { from(t) {
     const st = { f: [], del: false };

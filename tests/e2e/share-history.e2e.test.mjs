@@ -95,6 +95,20 @@ describe('댓글', () => {
     await ctx.close();
   });
 
+  test('댓글 쓴 사람 이름은 계정 기준 (다른 이름을 보내도 그 계정의 사람 이름으로)', async () => {
+    const { ctx, page, errs } = await open(env, { seed, path: '#list' });
+    await page.click('.tx:has-text("점심")');
+    await page.waitForSelector('.comments');
+    await page.evaluate((m) => window.__rt('tx_comments', { eventType: 'INSERT', new: m }), comment('t1', 'spoof', '사칭 댓글', 'u2', '민지'));
+    await page.waitForTimeout(400);
+    assert.match(norm(await page.innerText('.notify-banner')), /준호님이 댓글을 남겼어요/); // 앱 안 알림도
+    await page.click('.notify-banner .nb-close');
+    const head = norm(await page.locator('.comment-list li', { hasText: '사칭 댓글' }).locator('.cm-head b').innerText());
+    assert.equal(head, '준호');
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
   test('푸시 알림 링크(?tx=)로 열면 그 내역이 열림', async () => {
     const { ctx, page } = await open(env, { seed, path: '?tx=t1' });
     await page.waitForTimeout(500);

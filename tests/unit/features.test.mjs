@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount } from '../../src/lib/recurring.js';
+import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount, resumeRule } from '../../src/lib/recurring.js';
 import { csvCell, toCsv } from '../../src/lib/csv.js';
 import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../../src/lib/shopping.js';
 import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../../src/lib/outbox.js';
@@ -124,5 +124,21 @@ assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' })
   assert.equal(backfillCount('2026-09-25', new Date(2026, 10, 18)), 1); // 10월만 (11월 25일은 아직)
   assert.equal(backfillCount('2026-12-01', new Date(2026, 10, 18)), 0); // 앞날짜
   assert.equal(backfillCount('', new Date()), 0);
+}
+// 일시정지 후 다시 시작: 멈춘 달은 건너뜀
+{
+  const base = { id: 'p', type: 'expense', amount: 13500, category: '문화·여가', memo: '', memberId: null, start: '2026-01', end: null, last: '2026-08', active: false };
+  const today = new Date(2026, 10, 18); // 11월 18일
+  assert.equal(resumeRule({ ...base, day: 5 }, today).last, '2026-11'); // 이번 달 5일은 지남
+  assert.equal(resumeRule({ ...base, day: 25 }, today).last, '2026-10'); // 25일은 아직
+  assert.equal(resumeRule({ ...base, day: 18 }, today).last, '2026-11'); // 오늘이 그날 → 지난 것으로
+  assert.equal(resumeRule({ ...base, day: 5, last: '2026-12' }, today).last, '2026-12'); // 이미 더 뒤면 그대로
+  assert.equal(resumeRule({ ...base, day: 5, last: null }, today).last, '2026-11');
+  assert.equal(resumeRule({ ...base, day: 31, last: '2026-01' }, new Date(2026, 1, 28)).last, '2026-02'); // 31일 규칙, 2월 28일 = 그달 말일 → 지난 것으로
+  const r = resumeRule({ ...base, day: 25 }, today);
+  assert.equal(r.active, true);
+  assert.deepEqual(dueMonths(r, today), []);
+  assert.deepEqual(dueMonths(r, new Date(2026, 10, 25)).map((x) => x.date), ['2026-11-25']);
+  assert.deepEqual(dueMonths(resumeRule({ ...base, day: 5 }, today), new Date(2026, 11, 5)).map((x) => x.date), ['2026-12-05']);
 }
 console.log('feature unit tests: all passed');

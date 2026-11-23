@@ -6,8 +6,8 @@ const fmt = (iso) => {
   return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 };
 
-/** 내역 아래 댓글: 목록 + 입력. 내 댓글만 지울 수 있음 */
-export default function CommentThread({ comments = [], uid, supported, online, onAdd, onDelete }) {
+/** 내역 아래 댓글: 목록 + 입력. 내 댓글만 지울 수 있음. nameOf(댓글) = 화면에 보일 쓴 사람 이름 */
+export default function CommentThread({ comments = [], uid, supported, online, onAdd, onDelete, nameOf = (c) => c.author_name }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
   if (!supported) {
@@ -27,7 +27,7 @@ export default function CommentThread({ comments = [], uid, supported, online, o
         <ul className="comment-list">
           {comments.map((c) => (
             <li key={c.id} className={c.author === uid ? 'mine' : ''}>
-              <div className="cm-head"><b>{c.author_name}</b><time>{fmt(c.created_at)}</time>
+              <div className="cm-head"><b>{nameOf(c)}</b><time>{fmt(c.created_at)}</time>
                 {c.author === uid && <button type="button" className="cm-del" aria-label="댓글 삭제" onClick={() => onDelete(c.id)}>삭제</button>}
               </div>
               <p>{c.body}</p>

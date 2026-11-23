@@ -56,6 +56,7 @@ export function detectSubscriptions(allTx, recurring = [], dismissed = [], today
     const s = {
       key, type: latest.type, amount: latest.amount, category: latest.category, memo: latest.memo || '',
       memberId: latest.memberId ?? null, day: days[0], months: run.length, label: latest.memo || latest.category,
+      lastYm: latest.date.slice(0, 7), // 마지막으로 결제된 달 (이번 달 또는 지난달)
     };
     if (coveredBy(s, recurring)) continue;
     out.push(s);
@@ -63,11 +64,15 @@ export function detectSubscriptions(allTx, recurring = [], dismissed = [], today
   return out.sort((a, b) => b.amount - a.amount).slice(0, limit);
 }
 
-/** 제안 → 반복 내역 규칙. 이번 달 것은 이미 있으니 다음 달부터 자동 기록 (last = 이번 달) */
+/**
+ * 제안 → 반복 내역 규칙. 마지막으로 결제된 달까지는 이미 기록돼 있으니 그다음 달부터 자동 기록 (last = 마지막 결제 달).
+ * 마지막이 지난달이면 이번 달 결제일에 기록되고, 이번 달이면 다음 달부터.
+ */
 export function ruleFromSuggestion(s, id, today = new Date()) {
   const ym = ymOf(today);
+  const last = typeof s.lastYm === 'string' && /^\d{4}-\d{2}$/.test(s.lastYm) && s.lastYm <= ym ? s.lastYm : ym;
   return {
     id, type: s.type, amount: s.amount, category: s.category, memo: s.memo.slice(0, MAX_MEMO), memberId: s.memberId ?? null,
-    day: Math.min(31, Math.max(1, s.day)), start: ym, end: null, last: ym, active: true,
+    day: Math.min(31, Math.max(1, s.day)), start: last, end: null, last, active: true,
   };
 }

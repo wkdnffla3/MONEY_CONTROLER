@@ -19,24 +19,46 @@ const assetRefs = (text, base) => {
   for (const m of text.matchAll(/["'`(]\/?(assets\/[^"'`\s)]+\.(?:js|css))["'`)]/g)) out.push(`/${m[1]}`);
   return out.filter((p) => p.startsWith('/assets/'));
 };
+// 지금 화면(index.html)에 필요한 빌드 파일을 모두 저장하고, 그 밖의 예전 빌드 파일은 지움.
+// (sw.js 는 배포해도 바뀌지 않아 다시 설치되지 않으므로, 정리하지 않으면 배포할 때마다 예전 파일이 쌓임)
+let lastShell = '';
+async function syncAssets(html, { prune = true } = {}) {
+  if (!html || html === lastShell) return;
+  const cache = await caches.open(ASSET_CACHE);
+  const queue = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
+  if (!queue.length) return; // 빌드 파일이 안 보이면(오류 화면 등) 아무것도 지우지 않음
+  const keep = new Set();
+  let complete = true;
+  while (queue.length) {
+    if (keep.size >= MAX_ASSETS) { complete = false; break; }
+    const path = queue.shift();
+    if (keep.has(path)) continue;
+    keep.add(path);
+    let r = await cache.match(path);
+    if (!r) {
+      try {
+        r = await fetch(path, { cache: 'no-cache' });
+        if (!r.ok) { complete = false; continue; }
+        await cache.put(path, r.clone());
+      } catch { complete = false; continue; }
+    }
+    if (path.endsWith('.js')) queue.push(...assetRefs(await r.text(), new URL(path, self.location.origin)));
+  }
+  lastShell = html;
+  // 다 받았을 때만 정리 (중간에 끊겼으면 지금 쓰는 파일을 지울 수 있으니 그대로 둠)
+  if (!prune || !complete) return;
+  for (const req of await cache.keys()) {
+    const p = new URL(req.url).pathname;
+    if (p.startsWith('/assets/') && !keep.has(p)) await cache.delete(req);
+  }
+}
+
 async function precache() {
   const shell = await caches.open(SHELL_CACHE);
   await shell.addAll(SHELL_URLS);
   try {
     const res = await shell.match('/');
-    const html = res ? await res.text() : '';
-    const queue = [...html.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g)].map((m) => m[1]);
-    const seen = new Set();
-    const cache = await caches.open(ASSET_CACHE);
-    while (queue.length && seen.size < MAX_ASSETS) {
-      const path = queue.shift();
-      if (seen.has(path)) continue;
-      seen.add(path);
-      const r = await fetch(path, { cache: 'no-cache' });
-      if (!r.ok) continue;
-      await cache.put(path, r.clone());
-      if (path.endsWith('.js')) queue.push(...assetRefs(await r.text(), new URL(path, self.location.origin)));
-    }
+    await syncAssets(res ? await res.text() : '');
   } catch {
     // 실패해도 앱이 한가할 때 미리 받기(lazyScreens)와 fetch 단계에서 채워짐
   }
@@ -69,7 +91,11 @@ self.addEventListener('fetch', (event) => {
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();
-            caches.open(SHELL_CACHE).then((c) => c.put('/', copy));
+            const forSync = res.clone();
+            event.waitUntil(
+              caches.open(SHELL_CACHE).then((c) => c.put('/', copy))
+                .then(() => forSync.text()).then((html) => syncAssets(html)).catch(() => {}),
+            );
           }
           return res;
         })

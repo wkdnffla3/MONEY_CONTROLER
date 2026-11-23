@@ -136,5 +136,36 @@ describe('새 내역 → 매달 반복', () => {
     assert.deepEqual(errs, []);
     await ctx.close();
   });
-});
 
+  test('일시정지했던 반복 내역을 다시 시작 → 멈춰 있던 달은 기록하지 않음', async () => {
+    const rule = (id, day) => ({ id, type: 'expense', amount: 13500, category: '문화·여가', memo: '구독' + id, memberId: null, day, start: '2026-01', end: null, last: '2026-08', active: false });
+    const seed = seedScript({ settingsRow: settings({ recurring: [rule('a', 5), rule('b', 25)] }) });
+    const { ctx, page, errs } = await open(env, {
+      seed, contextOptions: KST, beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-18T10:00:00+09:00') }),
+    });
+    await page.click('button[aria-label="설정 메뉴"]');
+    await page.click('.menu-list button:has-text("반복 내역")');
+    await page.waitForSelector('.sheet');
+    for (const name of ['구독a', '구독b']) {
+      await page.locator('.sheet li', { hasText: name }).locator('button:has-text("다시 시작")').click();
+      await page.waitForTimeout(500);
+    }
+    await page.waitForTimeout(1200);
+    let d = await db(page);
+    // 5일 규칙: 이번 달 5일은 멈춘 동안 지나감 → 안 만듦 / 25일 규칙: 아직 안 옴 → 안 만듦
+    assert.deepEqual(d.transactions.map((t) => t.memo), []);
+    const byId = Object.fromEntries(d.settings[0].recurring.map((r) => [r.id, r]));
+    assert.equal(byId.a.last, '2026-11');
+    assert.equal(byId.b.last, '2026-10');
+    assert.ok(byId.a.active && byId.b.active);
+    // 25일이 되면 b 만 기록
+    await page.clock.setSystemTime(new Date('2026-11-25T09:00:00+09:00'));
+    await page.reload();
+    await page.waitForSelector('.nav-tabs');
+    await page.waitForTimeout(1500);
+    d = await db(page);
+    assert.deepEqual(d.transactions.map((t) => `${t.memo}:${t.date}`), ['구독b:2026-11-25']);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+});
