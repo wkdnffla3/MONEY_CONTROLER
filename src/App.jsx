@@ -117,6 +117,36 @@ export default function App() {
   }, []);
   const [sheet, setSheet] = useState(() => (openedFromAddShortcut() ? { kind: 'add' } : null)); // { kind: 'add' } | { kind: 'edit', id } | { kind: 'budget' }
   const closeSheet = useCallback(() => setSheet((s) => (s?.back ? { kind: s.back } : null)), []);
+  // 휴대폰 뒤로 가기: 열린 시트(입력창 등)를 닫음 (예전엔 앱을 나가거나 탭이 바뀌어 입력하던 내용이 사라졌음)
+  // 시트가 열리면 같은 주소로 기록을 하나 쌓고, 뒤로 가기가 오면 그 기록을 쓰며 시트만 닫음.
+  // 버튼으로 닫으면 쌓아 둔 기록을 되돌려 놓아, 뒤로 가기를 한 번 더 눌러야 하는 일이 없게 함
+  const sheetEntry = useRef(false);
+  const sheetRef = useRef(sheet);
+  sheetRef.current = sheet;
+  const skipPops = useRef(0);
+  const sheetOpen = !!sheet;
+  useEffect(() => {
+    if (sheetOpen && !sheetEntry.current) {
+      sheetEntry.current = true;
+      window.history.pushState({ sheet: true }, '', window.location.href);
+    } else if (!sheetOpen && sheetEntry.current) {
+      sheetEntry.current = false;
+      if (window.history.state?.sheet) { skipPops.current += 1; window.history.back(); }
+    }
+  }, [sheetOpen]);
+  useEffect(() => {
+    const onPop = () => {
+      if (skipPops.current > 0) { skipPops.current -= 1; return; }
+      if (!sheetEntry.current) return;
+      sheetEntry.current = false;
+      // 다른 시트에서 넘어온 시트(예: 검색 → 내역 수정)면 그 시트로, 아니면 닫기 (돌아간 시트는 위 효과가 기록을 다시 쌓음)
+      const s = sheetRef.current;
+      if (s?.back) { sheetEntry.current = true; window.history.pushState({ sheet: true }, '', window.location.href); setSheet({ kind: s.back }); }
+      else setSheet(null);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
   const [listView, setListView] = useState('list'); // 내역: 목록 | 달력
   const [calDay, setCalDay] = useState(null);         // 달력에서 고른 날짜
   const [searchFilters, setSearchFilters] = useState(EMPTY_FILTERS);
@@ -190,6 +220,15 @@ export default function App() {
   // 새 내역의 기본 "누가": 특정 사람 보기 중이면 그 사람, 아니면 이 기기의 사람
   const formDefaultMember = whoValid !== 'all' && whoValid !== SHARED ? whoValid : meId;
   const defaultDate = isCurrentMonth(ym) ? todayStr() : `${ym.y}-${pad(ym.m)}-01`;
+  // 앱을 켜 둔 채 달이 바뀌면(자정): 이번 달을 보고 있었다면 새 달로 넘어감 (지난달을 일부러 보던 중이면 그대로)
+  const curMonthKey = todayStr().slice(0, 7);
+  const lastMonthKey = useRef(curMonthKey);
+  useEffect(() => {
+    if (lastMonthKey.current === curMonthKey) return;
+    const was = lastMonthKey.current;
+    lastMonthKey.current = curMonthKey;
+    if (ymKey(ym.y, ym.m) === was) setYm(thisMonth());
+  }, [curMonthKey, ym]);
 
   // 알림을 누르면 해당 페이지로 (앱 안 배너, 또는 서비스워커가 보낸 메시지)
   const openNotified = (url) => {
@@ -254,8 +293,11 @@ export default function App() {
   const changePage = (p) => {
     setPage(p);
     setSheet(null);
-    if (p !== 'ledger') window.history.pushState(null, '', `${window.location.pathname}#${p}`);
-    else window.history.pushState(null, '', window.location.pathname);
+    // 시트가 열려 있었으면 그 기록 자리를 새 탭 주소로 바꿈 (닫을 때 되돌리다 탭 이동이 취소되지 않게)
+    const how = sheetEntry.current ? 'replaceState' : 'pushState';
+    sheetEntry.current = false;
+    if (p !== 'ledger') window.history[how](null, '', `${window.location.pathname}#${p}`);
+    else window.history[how](null, '', window.location.pathname);
     window.scrollTo(0, 0);
   };
   const shop = {
@@ -397,6 +439,18 @@ export default function App() {
   const saveRecurring = (rules, msg) => notifySaved(ledger.saveSetting('recurring', rules), msg);
   const saveCatBudgets = (value) => { closeSheet(); notifySaved(ledger.saveSetting('catBudgets', value), '카테고리별 예산을 저장했어요'); };
   const saveCategories = (cats, renames) => {
+    // 상세 검색에서 고른 카테고리도 새 이름으로 (맞바꾸기도 한 번에)
+    if (renames.length) {
+      setSearchFilters((f) => {
+        if (!f.categories.length) return f;
+        const next = f.categories.flatMap((name) => {
+          const rs = renames.filter((r) => r.from === name && (f.type === 'all' || r.type === f.type));
+          if (!rs.length) return [name];
+          return [...rs.map((r) => r.to), ...(f.type === 'all' && rs.length === 1 ? [name] : [])];
+        });
+        return { ...f, categories: [...new Set(next)] };
+      });
+    }
     closeSheet();
     notifySaved(ledger.saveCategories(cats, renames), renames.length ? '카테고리를 저장하고 기존 내역도 바꿨어요' : '카테고리를 저장했어요');
   };
@@ -456,6 +510,15 @@ export default function App() {
   };
 
   // ---- 화면 분기 ----
+  const editing = sheet?.kind === 'edit' ? allTx.find((t) => t.id === sheet.id) : null;
+  // 수정 중인 내역이 다른 기기에서 지워지면: 빈 시트가 열린 채로 남지 않게 닫고 알려줌
+  const editGone = sheet?.kind === 'edit' && !editing && ledger.serverLoaded; // 서버에서 받은 뒤에만 (옛 캐시엔 없을 수 있음)
+  useEffect(() => {
+    if (!editGone) return;
+    closeSheet();
+    show('다른 기기에서 지워진 내역이에요');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editGone]);
   if (showPrivacy) return <ScreenBoundary><PrivacyPolicy onClose={closePrivacy} /></ScreenBoundary>;
   if (configError) {
     return (
@@ -473,7 +536,6 @@ export default function App() {
   }
   if (!auth.user) return <ScreenBoundary><AuthScreen /></ScreenBoundary>;
 
-  const editing = sheet?.kind === 'edit' ? allTx.find((t) => t.id === sheet.id) : null;
 
   return (
     <CategoriesContext.Provider value={cats}>

@@ -679,6 +679,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden } = {}) {
     schemaNeed,
     thisMonth: ymOf(new Date(today)),
     status,
+    serverLoaded,
     error,
     online,
     syncing,

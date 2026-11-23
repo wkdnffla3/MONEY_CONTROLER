@@ -17,7 +17,9 @@ export default function BudgetCard({ budget, exp, ym, onEdit, note = '' }) {
       const remain = daysInMonth(ym.y, ym.m) - new Date().getDate() + 1;
       foot = over ? `예산을 ${won(-left)} 넘었어요.` : `남은 ${remain}일 동안 하루 ${won(left / remain)}까지 쓸 수 있어요.`;
     } else {
-      foot = over ? `예산을 ${won(-left)} 넘었어요.` : `예산 안에서 ${won(left)} 남겼어요.`;
+      const now = new Date();
+      const future = ym.y * 12 + ym.m > now.getFullYear() * 12 + now.getMonth() + 1; // 다음 달 이후 (미리 넣은 내역만 있음)
+      foot = over ? `예산을 ${won(-left)} 넘었어요.` : future ? `아직 ${won(left)} 남았어요.` : `예산 안에서 ${won(left)} 남겼어요.`;
     }
     body = (
       <>
