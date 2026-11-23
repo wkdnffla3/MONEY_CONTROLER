@@ -88,6 +88,7 @@ export function isValidRecurring(list) {
     if (!Number.isInteger(r.day) || r.day < 1 || r.day > 31) return false;
     if (!isYm(r.start) || !(r.end == null || isYm(r.end)) || !(r.last == null || isYm(r.last))) return false;
     if (typeof r.active !== 'boolean') return false;
+    if (!(r.srcTx == null || isStr(r.srcTx, 64))) return false;
     ids.add(r.id);
   }
   return true;

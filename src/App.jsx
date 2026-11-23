@@ -27,7 +27,7 @@ import MonthlyTrend from './components/MonthlyTrend';
 import SettingsMenu from './components/SettingsMenu';
 import { backupDue } from './lib/backup';
 import { PRIVACY_HASH } from './lib/privacy';
-import { MAX_RECURRING, recurringTxId, ruleFromTx } from './lib/recurring';
+import { MAX_RECURRING, recurringTxId, repeatMarker, ruleFromTx, ruleOfTx } from './lib/recurring';
 import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
 import { summarize as summarizeShopping } from './lib/shopping';
@@ -286,6 +286,23 @@ export default function App() {
         + savedSuffix(a.synced && b.synced, navigator.onLine !== false)))
       .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
   };
+
+  // 내역 수정. "🔁 매달 반복"을 새로 켜면 이 내역을 첫 달로 하는 규칙을 만들고, 끄면 연결된 규칙을 지움
+  // (이미 기록된 내역은 그대로, 다음 달부터 기록 안 됨)
+  const editTx = (id, data, { repeat } = {}) => {
+    const rule = ruleOfTx(ledger.recurring, id);
+    if (!!rule === !!repeat) { saveTx(id, data, true); return; }
+    if (!rule && ledger.recurring.length >= MAX_RECURRING) { saveTx(id, data, true); return; }
+    closeSheet();
+    const [y, m] = data.date.split('-').map(Number);
+    if (y !== ym.y || m !== ym.m) setYm({ y, m });
+    const next = rule ? ledger.recurring.filter((r) => r.id !== rule.id) : [...ledger.recurring, ruleFromTx(data, newId(), id)];
+    const msg = rule ? '수정했어요 · 🔁 반복 해제 (기록된 내역은 그대로)' : `수정했어요 · 🔁 매달 ${Number(data.date.slice(8, 10))}일 반복 등록`;
+    Promise.all([ledger.saveTx(id, data), ledger.saveSetting('recurring', next)])
+      .then(([a, b]) => show(msg + savedSuffix(a.synced && b.synced, navigator.onLine !== false)))
+      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+  };
+  const isRepeatTx = useMemo(() => repeatMarker(ledger.recurring), [ledger.recurring]);
 
   // ---- 장보기 ----
   const shopItems = ledger.items;
@@ -598,6 +615,7 @@ export default function App() {
             />
             <WhoFilter members={members} who={whoValid} onChange={setWho} />
             <TxList
+              isRepeat={isRepeatTx}
               members={members}
               items={viewTx}
               filter={filter}
@@ -692,7 +710,9 @@ export default function App() {
             initial={editing}
             members={members}
             defaultDate={defaultDate}
-            onSubmit={(d) => saveTx(editing.id, d, true)}
+            repeatRule={ruleOfTx(ledger.recurring, editing.id)}
+            canRepeat={ledger.recurring.length < MAX_RECURRING}
+            onSubmit={(d, o) => editTx(editing.id, d, o)}
             onDelete={() => deleteTx(editing.id)}
           />
           <button type="button" className="btn fav-add-btn" onClick={() => favoriteFromTx(editing)}>⭐ 즐겨찾기에 추가</button>

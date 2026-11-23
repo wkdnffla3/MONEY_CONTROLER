@@ -13,6 +13,37 @@ const rows = [
 const seed = seedScript({ transactions: rows, settingsRow: settings({ members: [{ id: 'm1', name: '민지', color: 0 }] }) });
 
 describe('리포트 펼쳐 보기', () => {
+  test('펼친 내역 정렬: 금액순 → 최신순 → 오래된순, 다른 묶음·새로고침에도 유지', async () => {
+    const { ctx, page, errs } = await open(env, { seed });
+    await tab(page, '리포트');
+    await page.locator('.share-row', { hasText: '식비' }).first().click();
+    const open1 = page.locator('.share-list li.open').first();
+    const dates = async () => (await open1.locator('.share-items li .d').allInnerTexts());
+    const amounts = async () => (await open1.locator('.share-items li .num:not(.d)').allInnerTexts()).map((x) => Number(x.replace(/\D/g, '')));
+    assert.equal(await open1.locator('.item-sort .chip[aria-pressed="true"]').innerText(), '금액순');
+    const a = await amounts();
+    assert.deepEqual(a, [...a].sort((x, y) => y - x));
+    await open1.locator('.item-sort .chip:has-text("최신순")').click();
+    let d = await dates();
+    assert.deepEqual(d, [...d].sort().reverse());
+    assert.equal(d[0], '09/18');
+    await open1.locator('.item-sort .chip:has-text("오래된순")').click();
+    d = await dates();
+    assert.deepEqual(d, [...d].sort());
+    assert.equal(d[0], '01/10');
+    // 더 보기 후에도 순서 유지
+    await open1.locator('.share-items .more').click();
+    d = await dates();
+    assert.deepEqual(d, [...d].sort());
+    await page.reload();
+    await page.waitForSelector('.nav-tabs');
+    await tab(page, '리포트');
+    await page.locator('.share-row', { hasText: '식비' }).first().click();
+    assert.equal(await page.locator('.share-list li.open .item-sort .chip[aria-pressed="true"]').first().innerText(), '오래된순');
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
   test('카테고리 줄 → 그 카테고리 내역(큰 금액 순 10개), 더 보기, 다시 누르면 접힘', async () => {
     const { ctx, page, errs } = await open(env, { seed });
     await tab(page, '리포트');

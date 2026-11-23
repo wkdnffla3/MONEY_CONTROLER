@@ -102,12 +102,32 @@ export const MAX_RECURRING = 100;
  * 입력한 내역이 그 달 몫이므로 last = 그 달 → 같은 달은 다시 만들지 않음.
  * (지난달 날짜로 넣으면 그다음 달부터 이번 달까지 빠진 달은 자동으로 채워짐)
  */
-export function ruleFromTx(data, id) {
+export function ruleFromTx(data, id, srcTx = null) {
   const ym = data.date.slice(0, 7);
-  return {
+  const rule = {
     id, type: data.type, amount: data.amount, category: data.category, memo: data.memo || '',
     memberId: data.memberId ?? null, day: Number(data.date.slice(8, 10)), start: ym, end: null, last: ym, active: true,
   };
+  // 이미 있던 내역을 반복으로 바꾼 경우: 그 내역 ID를 기억 (내역에서 반복을 다시 끌 수 있게)
+  if (srcTx) rule.srcTx = srcTx;
+  return rule;
+}
+
+/**
+ * 이 내역과 연결된 반복 규칙 (없으면 null)
+ * - 자동 기록된 내역: ID가 rec-<규칙ID>-<YYYY-MM>
+ * - 반복으로 바꾼 원래 내역: 규칙의 srcTx
+ */
+export function ruleOfTx(rules, txId) {
+  if (!txId || !Array.isArray(rules)) return null;
+  return rules.find((r) => r.srcTx === txId
+    || (isRecurringTxId(txId) && txId.length === `rec-${r.id}-`.length + 7 && txId.startsWith(`rec-${r.id}-`))) || null;
+}
+
+/** 반복과 연결된 내역 ID 판별 함수 (목록의 🔁 표시용) */
+export function repeatMarker(rules) {
+  const src = new Set(rules.map((r) => r.srcTx).filter(Boolean));
+  return (id) => isRecurringTxId(id) || src.has(id);
 }
 
 /** "매달 반복"으로 저장하면 바로 채워질 지난 달 수 (안내용) */
