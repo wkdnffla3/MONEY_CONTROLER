@@ -507,7 +507,7 @@ export default function App() {
           <>
             <WhoFilter members={members} who={whoValid} onChange={setWho} />
             <ReportPage allTx={whoTx} year={reportYear} onYear={setReportYear} members={members} cards={ledger.cards}
-              who={whoValid} whoLabel={whoLabel} onPickMonth={(m) => { setYm(m); changePage('ledger'); }} />
+              who={whoValid} whoLabel={whoLabel} onPickMonth={(m) => { setYm(m); changePage('ledger'); }} onOpenTx={(id) => setSheet({ kind: 'edit', id })} />
           </>
         ) : page === 'list' ? (
         <div className="layout">
