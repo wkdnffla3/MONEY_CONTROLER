@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
 import { SHARED_LABEL, findMember, memberColor } from '../lib/members';
 import { newId, MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
-import { MAX_RECURRING, nextDate, occurrenceDate, ymOf } from '../lib/recurring';
+import { MAX_RECURRING, nextDate, occurrenceDate, resumeRule, ymOf } from '../lib/recurring';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 
 const MAX_RULES = MAX_RECURRING;
@@ -59,7 +59,7 @@ export default function RecurringManager({ rules, members, onSave }) {
                 </div>
                 <div className={`amt num ${r.type === 'income' ? 'inc' : ''}`}>{r.type === 'income' ? '+' : '-'}{won(r.amount)}</div>
                 <div className="rule-actions">
-                  <button type="button" className="linkbtn" onClick={() => save(list.map((x) => (x.id === r.id ? { ...x, active: !x.active } : x)), r.active ? '일시정지했어요' : '다시 시작했어요')}>
+                  <button type="button" className="linkbtn" onClick={() => save(list.map((x) => (x.id !== r.id ? x : x.active ? { ...x, active: false } : resumeRule(x))), r.active ? '일시정지했어요' : '다시 시작했어요 · 멈춰 있던 달은 기록하지 않아요')}>
                     {r.active ? '일시정지' : '다시 시작'}
                   </button>
                   <button type="button" className="linkbtn" onClick={() => setEditing(r.id)}>수정</button>

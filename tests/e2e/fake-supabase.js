@@ -59,13 +59,13 @@ function q(table){ const st={f:[],cols:'*'}; const b={
   insert(row){ if(tableMissing(table)) return exec(()=>noTable(table), true);
     return exec(db=>{ if(table==='tx_comments'){ row={author:UID(),created_at:new Date().toISOString(),...row}; if(row.author!==UID()||row.user_id!==ledgerOf(db,UID())) return rlsDenied(table); if(!String(row.body||'').trim()) return {error:{code:'23514',message:'check constraint'}}; }
       if(db[table].some(r=>r.id===row.id)) return {error:{code:'23505',message:'duplicate key'}}; db.writes++; db[table].push(row); return {error:null}; }, true); },
-  order(k,o){ st.order=[k,o&&o.ascending===false?-1:1]; return b; }, limit(n){ st.limit=n; return b; }, lt(k,v){ st.lt=[k,v]; return b; },
+  order(k,o){ st.order=[k,o&&o.ascending===false?-1:1]; return b; }, limit(n){ st.limit=n; return b; }, lt(k,v){ st.lt=[k,v]; return b; }, range(a,z){ st.range=[a,z]; return b; },
   delete(){ st.del=true; return b; },
   update(row){ st.upd=row; return b; },
   then(res,rej){ if(tableMissing(table)) return exec(()=>noTable(table), !!st.del).then(res,rej); const mc=!st.del && missingIn(table, st.cols); if(mc) return exec(()=>({data:null,error:{code:'42703',message:`column ${table}.${mc} does not exist`}})).then(res,rej);
     if(st.upd) return exec(db=>{ db.writes++; db.updateCalls=(db.updateCalls||0)+1; db[table]=db[table].map(r=>visible(db,table,r)&&st.f.every(([k,v])=>(k==='user_id'?rowLedger(r):r[k])===v)?{...r,...st.upd}:r); return {error:null}; }, true).then(res,rej);
     const p = st.del ? exec(db=>{ db.writes++; const keep=[], gone=[]; for(const r of db[table]) ((visible(db,table,r)&&st.f.every(([k,v])=>r[k]===v)&&(table!=='tx_comments'||r.author===UID()))?gone:keep).push(r); db[table]=keep; gone.forEach(r=>logIt(db,table,'delete',r,null,r.id)); return {error:null}; }, true)
-                     : exec(db=>({data:db[table].filter(r=>visible(db,table,r)&&st.f.every(([k,v])=>r[k]===v)&&(!st.lt||r[st.lt[0]]<st.lt[1])).sort((a,c)=>st.order?(a[st.order[0]]>c[st.order[0]]?1:-1)*st.order[1]:0).slice(0,st.limit||1e9).map(r=>{ const o={...r}; for(const c of (MISSING()[table]||[])) delete o[c]; return o; }),error:null})); return p.then(res,rej); } }; return b; }
+                     : exec(db=>({data:db[table].filter(r=>visible(db,table,r)&&st.f.every(([k,v])=>r[k]===v)&&(!st.lt||r[st.lt[0]]<st.lt[1])).sort((a,c)=>st.order?(a[st.order[0]]>c[st.order[0]]?1:-1)*st.order[1]:0).slice(st.range?st.range[0]:0).slice(0,Math.min(st.limit||1e9,st.range?st.range[1]-st.range[0]+1:1e9,Number(sessionStorage.getItem('__maxRows'))||1000)).map(r=>{ const o={...r}; for(const c of (MISSING()[table]||[])) delete o[c]; return o; }),error:null})); return p.then(res,rej); } }; return b; }
 let session=sessionStorage.getItem('__signedOut')?null:{user:{id:UID(),email:EMAILS[UID()],identities:[{}]}}; const subs=new Set();
 const fnErr=(m)=>({data:null,error:{code:'P0001',message:m}});
 const noFn=(fn)=>({data:null,error:{code:'PGRST202',message:`Could not find the function public.${fn} in the schema cache`}});

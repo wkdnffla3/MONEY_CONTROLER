@@ -45,6 +45,18 @@ export function dueMonths(rule, today = new Date()) {
   return out;
 }
 
+/**
+ * 일시정지했던 규칙을 다시 시작: 멈춰 있던 달은 건너뜀 (그동안 안 낸 것으로 봄).
+ * 이번 달의 그날이 이미 지났으면 이번 달도 건너뛰고, 아직이면 그날 기록됨.
+ */
+export function resumeRule(rule, today = new Date()) {
+  const cur = ymOf(today);
+  const passed = Number(occurrenceDate(cur, rule.day).slice(8)) <= today.getDate();
+  const skipTo = passed ? cur : toYm(toNum(cur) - 1);
+  const last = rule.last && toNum(rule.last) >= toNum(skipTo) ? rule.last : skipTo;
+  return { ...rule, active: true, last };
+}
+
 /** 등록할 내역 목록과 last가 갱신된 규칙 목록 */
 export function planRecurring(rules, today = new Date()) {
   const txs = [];

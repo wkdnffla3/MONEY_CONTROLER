@@ -1,7 +1,7 @@
 // 오프라인 보관·재전송·중복 방지, 카테고리 이름 변경(요청 1번), DB 업데이트 전(011) 보관
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, open, tab, menu, addTx, seedScript, tx, db, pending, norm } from './helpers.mjs';
+import { setup, open, tab, menu, addTx, seedScript, settings, tx, db, pending, norm } from './helpers.mjs';
 
 const env = setup();
 const memos = async (page) => (await db(page)).transactions.map((t) => t.memo).sort();
@@ -143,6 +143,51 @@ describe('카테고리 이름 변경', () => {
       assert.deepEqual(errs, []);
       await ctx.close();
     }
+  });
+
+  test('아직 못 보낸 내역이 있을 때 맞바꾸기(식비↔교통) → 그 내역도 올바르게 바뀜', async () => {
+    const swapSeed = seedScript({ transactions: [tx('f0', { category: '식비', memo: '서버밥' }), tx('b0', { category: '교통', memo: '서버버스' })] });
+    const { ctx, page, errs } = await open(env, { seed: swapSeed, path: '#list' });
+    await ctx.setOffline(true);
+    await addTx(page, 7000, '대기밥'); // 기본 카테고리 = 식비, 아직 못 보냄
+    const pendingTx = (await pending(page)).find((o) => o.kind === 'upsert');
+    assert.equal(pendingTx.data.category, '식비');
+    await menu(page, '카테고리 편집');
+    const names = page.locator('.sheet input[aria-label="이름"]');
+    for (let i = 0; i < await names.count(); i++) {
+      const v = await names.nth(i).inputValue();
+      if (v === '식비') await names.nth(i).fill('교통');
+      else if (v === '교통') await names.nth(i).fill('식비');
+    }
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(400);
+    await ctx.setOffline(false);
+    await page.waitForTimeout(2500);
+    const d = await db(page);
+    const cat = (memo) => d.transactions.find((t) => t.memo === memo).category;
+    assert.equal(cat('서버밥'), '교통');
+    assert.equal(cat('서버버스'), '식비');
+    assert.equal(cat('대기밥'), '교통'); // 원래 식비였으니 교통
+    assert.equal((await pending(page)).length, 0);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('이름 변경이 즐겨찾기·장보기 물품의 카테고리에도 반영', async () => {
+    const fav = { id: 'fv', label: '점심', type: 'expense', amount: 9000, category: '식비', memo: '', memberId: null, cardId: null, tags: [] };
+    const item = { id: 'it1', user_id: 'u1', name: '우유', qty: 1, price: 2500, category: '식비', member_id: null, memo: '', checked: false, status: 'todo', paid: null, tx_id: null, bought_at: null, created_at: 1 };
+    const { ctx, page, errs } = await open(env, { seed: seedScript({ settingsRow: settings({ favorites: [fav] }), extra: { shopping_items: [item] } }) });
+    await rename(page, '식비', '밥값');
+    await page.waitForTimeout(1500);
+    const d = await db(page);
+    assert.equal(d.settings[0].favorites[0].category, '밥값');
+    assert.equal(d.shopping_items[0].category, '밥값');
+    // 즐겨찾기로 저장해도 새 이름
+    await page.click('.fav-chip:has-text("점심")');
+    await page.waitForTimeout(700);
+    assert.equal((await db(page)).transactions.find((t) => t.amount === 9000).category, '밥값');
+    assert.deepEqual(errs, []);
+    await ctx.close();
   });
 
   test('지운 카테고리 이름(📦 옛 내역)으로 바꾸면 합쳐짐 확인 → "합쳐서 저장"을 눌러야 저장', async () => {
