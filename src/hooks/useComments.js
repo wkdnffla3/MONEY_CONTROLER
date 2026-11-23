@@ -64,11 +64,12 @@ export function useComments(ledgerId, uid, { onRemote } = {}) {
   }, [ledgerId, uid]);
 
   const remove = useCallback(async (id) => {
-    const prev = list;
-    setList((l) => l.filter((c) => c.id !== id));
+    let gone = null;
+    setList((l) => { gone = l.find((c) => c.id === id) || gone; return l.filter((c) => c.id !== id); });
     const { error } = await supabase.from('tx_comments').delete().eq('id', id);
-    if (error) { setList(prev); throw error; }
-  }, [list]);
+    // 실패하면 지운 댓글만 되돌림 (그사이 들어온 다른 댓글은 그대로)
+    if (error) { if (gone) setList((l) => (l.some((c) => c.id === id) ? l : [...l, gone].sort(sortByTime))); throw error; }
+  }, []);
 
   return { byTx, counts, supported, add, remove, reload: load };
 }

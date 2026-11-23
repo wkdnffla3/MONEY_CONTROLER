@@ -23,10 +23,11 @@ export function buildTxCsv(rows, { members = [], cards = [] } = {}) {
     t.memo || '',
     ...(members.length ? [members.find((m) => m.id === t.memberId)?.name || '공동'] : []),
     ...(hasTags ? [(t.tags || []).map((x) => `#${x}`).join(' ')] : []),
-    ...(cards.length ? [
-      cards.find((c) => c.id === t.cardId)?.name || (t.type === 'income' ? '' : '현금·기타'),
-      t.cardId && (t.inst || 1) > 1 ? `${t.inst}개월` : '',
-    ] : []),
+    ...(cards.length ? (() => {
+      const card = t.type === 'income' ? null : cards.find((c) => c.id === t.cardId);
+      // 지운 카드: 현금·기타로, 할부 칸도 비움 (화면과 같게)
+      return [card?.name || (t.type === 'income' ? '' : '현금·기타'), card && (t.inst || 1) > 1 ? `${t.inst}개월` : ''];
+    })() : []),
     isRecurringTxId(t.id) ? '반복' : isShoppingTxId(t.id) ? '장보기' : '',
   ]);
   return toCsv(header, body);

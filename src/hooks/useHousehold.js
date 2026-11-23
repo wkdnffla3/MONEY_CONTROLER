@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchHousehold, readHousehold, writeHousehold } from '../lib/household';
+import { leftLedger } from '../lib/leftLedger';
+import { clearUserData } from '../lib/outbox';
 
 /**
  * 지금 보는 가계부. 공유 가계부에 참여 중이면 그 가계부 ID, 아니면 내 계정 ID.
@@ -15,6 +17,10 @@ export function useHousehold(uid) {
     try {
       const h = await fetchHousehold(uid);
       if (my !== seq.current) return null;
+      // 공유 가계부에서 나갔거나 내보내졌으면: 그 가계부의 사본(내역 캐시·보낼 목록)을 이 기기에서 지움
+      // (내보낸 사람 입장에선 더 볼 수 없어야 하므로. 내 원래 가계부 사본은 그대로)
+      const gone = leftLedger(uid, readHousehold(uid), h);
+      if (gone) clearUserData(gone);
       writeHousehold(uid, h);
       setHousehold(h);
       return h;

@@ -77,7 +77,8 @@ export default function App() {
   // 지금 보는 가계부: 공유 가계부에 참여 중이면 그 가계부, 아니면 내 가계부
   const household = useHousehold(auth.user?.id);
   const ledgerId = household.ledgerId;
-  const ledger = useLedger(ledgerId, { onRemote: (n) => notifyRef.current?.(n), accountId: auth.user?.id, onForbidden: household.refresh });
+  const conflictRef = useRef(null);
+  const ledger = useLedger(ledgerId, { onRemote: (n) => notifyRef.current?.(n), accountId: auth.user?.id, onForbidden: household.refresh, onConflict: (c) => conflictRef.current?.(c) });
   const notifier = useNotifier(auth.user?.id, ledger.members);
   // 내역 댓글 (다른 사람이 쓴 새 댓글은 알림으로)
   // 실시간 댓글 알림 배너도 쓴 사람 이름을 계정 기준으로 (commentAuthorRef: 아래 commentAuthor)
@@ -88,6 +89,30 @@ export default function App() {
   });
   notifyRef.current = notifier.notify;
   const { toast, show, hide } = useToast();
+  // 저장 실패 알림. 다른 기기가 먼저 바꾼 충돌은 아래 알림(내 것으로 저장 버튼)이 따로 뜨므로 건너뜀
+  const fail = (prefix) => (e) => { if (e?.code !== 'conflict') show(`${prefix} · ${koError(e)}`); };
+  // 017 버전 확인: 다른 기기·사람이 먼저 고친 것을 덮어쓰지 않고 알림. 버튼으로 내 내용을 최신 기준으로 다시 저장
+  conflictRef.current = (list) => {
+    const c = list[0];
+    const { op, reason } = c;
+    const what = op.kind === 'item' || op.kind === 'itemDel' ? '장보기 물품' : op.kind === 'upsert' || op.kind === 'delete' ? '내역' : null;
+    const SET_LABEL = { budget: '예산', members: '사람 목록', recurring: '반복 내역', categories: '카테고리', catBudgets: '카테고리별 예산', cards: '카드', favorites: '즐겨찾기', dismissedSubs: '구독 제안' };
+    let msg, label;
+    if (!what) {
+      const w = SET_LABEL[op.kind] || '설정';
+      const last = w.charCodeAt(w.length - 1);
+      const obj = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 ? '을' : '를'; // 받침 있으면 을
+      msg = `다른 기기에서 먼저 ${w}${obj} 바꿔서 내 변경은 저장하지 않았어요`; label = '내 것으로 저장'; }
+    else if (op.kind === 'delete' || op.kind === 'itemDel') { msg = `다른 기기에서 고친 ${what}이라 지우지 않았어요`; label = '그래도 지우기'; }
+    else if (reason === 'deleted') { msg = `다른 기기에서 지운 ${what}이라 저장하지 않았어요`; label = '다시 살리기'; }
+    else { msg = `다른 기기에서 먼저 고친 ${what}이라 내 수정은 저장하지 않았어요`; label = '내 것으로 저장'; }
+    if (list.length > 1) msg += ` (외 ${list.length - 1}건)`;
+    show(`${msg} · 최신 내용을 불러왔어요`, () => {
+      Promise.all(list.map((x) => ledger.retryConflict(x)))
+        .then(() => show('내 내용으로 저장했어요'))
+        .catch(fail('저장하지 못했어요'));
+    }, { label, ms: 9000 });
+  };
 
   const [ym, setYm] = useState(thisMonth);
   const [filter, setFilter] = useState('all');
@@ -117,6 +142,11 @@ export default function App() {
   }, []);
   const [sheet, setSheet] = useState(() => (openedFromAddShortcut() ? { kind: 'add' } : null)); // { kind: 'add' } | { kind: 'edit', id } | { kind: 'budget' }
   const closeSheet = useCallback(() => setSheet((s) => (s?.back ? { kind: s.back } : null)), []);
+  // 수정 창을 연 순간의 버전(017). 창을 열어 둔 사이 다른 기기가 고친 걸 덮어쓰지 않게 저장·삭제할 때 같이 보냄
+  const editBase = useRef({ id: null, base: undefined });
+  if (sheet?.kind === 'edit' && editBase.current.id !== sheet.id) editBase.current = { id: sheet.id, base: ledger.verOf('upsert', sheet.id) };
+  else if (sheet?.kind !== 'edit' && editBase.current.id) editBase.current = { id: null, base: undefined };
+  const editBaseOf = (id) => (editBase.current.id === id ? editBase.current.base : undefined);
   // 휴대폰 뒤로 가기: 열린 시트(입력창 등)를 닫음 (예전엔 앱을 나가거나 탭이 바뀌어 입력하던 내용이 사라졌음)
   // 시트가 열리면 같은 주소로 기록을 하나 쌓고, 뒤로 가기가 오면 그 기록을 쓰며 시트만 닫음.
   // 버튼으로 닫으면 쌓아 둔 기록을 되돌려 놓아, 뒤로 가기를 한 번 더 눌러야 하는 일이 없게 함
@@ -261,14 +291,14 @@ export default function App() {
 
   // ---- 동작 ----
   // 저장은 기기에 먼저 기록되고 화면에 바로 보이므로, 서버 응답을 기다리지 않고 시트를 닫음
-  const saveTx = (id, data, isEdit) => {
+  const saveTx = (id, data, isEdit, opts) => {
     closeSheet();
     const [y, m] = data.date.split('-').map(Number);
     if (y !== ym.y || m !== ym.m) setYm({ y, m });
     const label = isEdit ? '수정했어요' : `${data.type === 'income' ? '수입' : '지출'} ${won(data.amount)} 저장`;
-    ledger.saveTx(id, data)
+    ledger.saveTx(id, data, opts)
       .then(({ synced }) => show(label + savedSuffix(synced, navigator.onLine !== false)))
-      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      .catch(fail('저장하지 못했어요'));
   };
 
   // 새 내역 저장. "🔁 매달 반복"을 켰으면 반복 규칙도 함께 (이번 내역 = 그 달 몫이라 ID를 반복 내역 형식으로)
@@ -284,23 +314,24 @@ export default function App() {
     ])
       .then(([a, b]) => show(`${data.type === 'income' ? '수입' : '지출'} ${won(data.amount)} 저장 · 🔁 매달 ${rule.day}일 반복 등록`
         + savedSuffix(a.synced && b.synced, navigator.onLine !== false)))
-      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      .catch(fail('저장하지 못했어요'));
   };
 
   // 내역 수정. "🔁 매달 반복"을 새로 켜면 이 내역을 첫 달로 하는 규칙을 만들고, 끄면 연결된 규칙을 지움
   // (이미 기록된 내역은 그대로, 다음 달부터 기록 안 됨)
   const editTx = (id, data, { repeat } = {}) => {
     const rule = ruleOfTx(ledger.recurring, id);
-    if (!!rule === !!repeat) { saveTx(id, data, true); return; }
-    if (!rule && ledger.recurring.length >= MAX_RECURRING) { saveTx(id, data, true); return; }
+    const opts = { base: editBaseOf(id) }; // 수정 창을 열 때 본 버전 → 그사이 다른 기기가 고쳤으면 알림 (017)
+    if (!!rule === !!repeat) { saveTx(id, data, true, opts); return; }
+    if (!rule && ledger.recurring.length >= MAX_RECURRING) { saveTx(id, data, true, opts); return; }
     closeSheet();
     const [y, m] = data.date.split('-').map(Number);
     if (y !== ym.y || m !== ym.m) setYm({ y, m });
     const next = rule ? ledger.recurring.filter((r) => r.id !== rule.id) : [...ledger.recurring, ruleFromTx(data, newId(), id)];
     const msg = rule ? '수정했어요 · 🔁 반복 해제 (기록된 내역은 그대로)' : `수정했어요 · 🔁 매달 ${Number(data.date.slice(8, 10))}일 반복 등록`;
-    Promise.all([ledger.saveTx(id, data), ledger.saveSetting('recurring', next)])
+    Promise.all([ledger.saveTx(id, data, opts), ledger.saveSetting('recurring', next)])
       .then(([a, b]) => show(msg + savedSuffix(a.synced && b.synced, navigator.onLine !== false)))
-      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      .catch(fail('저장하지 못했어요'));
   };
   const isRepeatTx = useMemo(() => repeatMarker(ledger.recurring), [ledger.recurring]);
 
@@ -323,14 +354,14 @@ export default function App() {
     openNew: (prefill) => setSheet({ kind: 'item', prefill }),
     toggle: (id) => {
       const it = shopItems[id];
-      if (it) ledger.saveItem(id, { ...it, checked: !it.checked }).catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      if (it) ledger.saveItem(id, { ...it, checked: !it.checked }).catch(fail('저장하지 못했어요'));
     },
     remove: (id) => {
       const it = shopItems[id];
       closeSheet();
       ledger.deleteItems([id])
         .then(() => show(`${it?.name || '물품'} 삭제했어요`, it ? () => ledger.saveItem(id, it).catch(() => {}) : undefined))
-        .catch((e) => show(`삭제하지 못했어요 · ${koError(e)}`));
+        .catch(fail('삭제하지 못했어요'));
     },
     confirm: () => setSheet({ kind: 'purchase' }),
     rebuy: (list) => notifySaved(ledger.updateItems(list.map((i, k) => ({
@@ -345,18 +376,19 @@ export default function App() {
     closeSheet();
     ledger.confirmPurchase(cartIds, opts)
       .then(({ synced, count }) => show(`가계부에 ${count}건 기록했어요` + savedSuffix(synced, navigator.onLine !== false)))
-      .catch((e) => show(`기록하지 못했어요 · ${koError(e)}`));
+      .catch(fail('기록하지 못했어요'));
   };
 
   const deleteTx = (id) => {
+    const base = editBaseOf(id);
     closeSheet();
-    ledger.deleteTx(id)
+    ledger.deleteTx(id, { base })
       .then(({ prev, synced }) => {
         // 되돌리기 = 같은 ID로 다시 저장 → 서버에 두 줄이 생기지 않음
         const undo = prev ? () => saveTx(id, prev, true) : undefined;
         show('삭제했어요' + savedSuffix(synced, navigator.onLine !== false), undo);
       })
-      .catch((e) => show(`삭제하지 못했어요 · ${koError(e)}`));
+      .catch(fail('삭제하지 못했어요'));
   };
 
   // ---- 즐겨찾기 ----
@@ -373,7 +405,7 @@ export default function App() {
     ledger.saveTx(id, data)
       .then(({ synced }) => show(`⭐ ${f.label} ${won(f.amount)} 저장${savedSuffix(synced, navigator.onLine !== false)}`,
         () => ledger.deleteTx(id).then(() => show('되돌렸어요')).catch(() => {})))
-      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      .catch(fail('저장하지 못했어요'));
   };
   const saveFavorites = (list, msg) => notifySaved(ledger.saveSetting('favorites', list), msg);
   const favoriteFromTx = (t) => {
@@ -390,7 +422,7 @@ export default function App() {
     [allTx, ledger.recurring, ledger.dismissedSubs],
   );
   const registerSubscription = (sg) => {
-    if (ledger.recurring.length >= 50) { show('반복 내역은 50개까지 만들 수 있어요'); return; }
+    if (ledger.recurring.length >= MAX_RECURRING) { show(`반복 내역은 ${MAX_RECURRING}개까지 만들 수 있어요`); return; }
     const rule = ruleFromSuggestion(sg, newId().slice(0, 40));
     notifySaved(ledger.saveSetting('recurring', [...ledger.recurring, rule]), `"${sg.label}" 반복 내역으로 등록했어요 · 다음 달 ${rule.day}일부터 자동 기록`);
   };
@@ -403,7 +435,7 @@ export default function App() {
   const myName = (members.find((m) => m.id === meId)?.name || (auth.user?.email || '나').split('@')[0]).slice(0, 20);
   const addComment = (txId, body) => comments.add(txId, body, myName)
     .catch((e) => { show(`댓글을 보내지 못했어요 · ${koError(e)}`); throw e; });
-  const deleteComment = (id) => comments.remove(id).then(() => show('댓글을 지웠어요')).catch((e) => show(`지우지 못했어요 · ${koError(e)}`));
+  const deleteComment = (id) => comments.remove(id).then(() => show('댓글을 지웠어요')).catch(fail('지우지 못했어요'));
 
   // 댓글 쓴 사람 이름: 보낸 이름(author_name)은 바꿔 보낼 수 있으므로 공유 참여자는 계정에 연결된 사람 이름(없으면 이메일 앞부분).
   // 가계부 주인·나·알 수 없는 계정은 보낸 이름 그대로
@@ -449,7 +481,7 @@ export default function App() {
   // 공통: 설정 저장 후 결과 알림
   const notifySaved = (p, msg) => p
     .then(({ synced }) => show(msg + savedSuffix(synced, navigator.onLine !== false)))
-    .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+    .catch(fail('저장하지 못했어요'));
 
   // 반복 내역은 시트를 닫지 않고 바로바로 저장
   const saveCards = (list, msg) => notifySaved(ledger.saveSetting('cards', list), msg);
@@ -491,14 +523,14 @@ export default function App() {
     setMeId(me);
     ledger.saveMembers(list)
       .then(({ synced }) => show('함께 쓰는 사람을 저장했어요' + savedSuffix(synced, navigator.onLine !== false)))
-      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      .catch(fail('저장하지 못했어요'));
   };
 
   const saveBudget = (value) => {
     closeSheet();
     ledger.saveBudget(value)
       .then(({ synced }) => show((value ? '예산을 저장했어요' : '예산을 없앴어요') + savedSuffix(synced, navigator.onLine !== false)))
-      .catch((e) => show(`저장하지 못했어요 · ${koError(e)}`));
+      .catch(fail('저장하지 못했어요'));
   };
 
   // 로그아웃: 공용 기기에 가계부가 남지 않도록 이 기기의 내역 캐시와 보낼 목록을 지움.
