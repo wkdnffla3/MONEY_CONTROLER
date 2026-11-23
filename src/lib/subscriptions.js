@@ -17,7 +17,8 @@ export function subscriptionKey(t) {
   return memo.length >= 2 ? `${t.type}|m|${memo}`.slice(0, 80) : `${t.type}|c|${t.category}|${t.amount}`.slice(0, 80);
 }
 
-const coveredBy = (s, rules) => rules.some((r) => r.active && r.type === s.type && (
+// 일시정지한 규칙도 "이미 있음"으로 봄 (멈춰 둔 걸 또 등록하라고 제안하면 중복)
+const coveredBy = (s, rules) => rules.some((r) => r.type === s.type && (
   (normMemo(r.memo).length >= 2 && normMemo(r.memo) === normMemo(s.memo))
   || (r.category === s.category && Math.abs(r.amount - s.amount) <= s.amount * 0.1)));
 

@@ -147,6 +147,9 @@ console.log('analysis unit tests: all passed');
   // 이미 비슷한 반복 규칙 있음
   r = detectSubscriptions(list.filter((t) => t.id !== 'n3b'), [{ active: true, type: 'expense', category: '통신', amount: 56000, memo: '' }], [], today);
   assert.ok(!r.some((x) => x.label === '통신'));
+  // 일시정지한 규칙도 이미 있는 것으로 (다시 등록하라고 제안 X)
+  r = detectSubscriptions(list.filter((t) => t.id !== 'n3b'), [{ active: false, type: 'expense', category: '통신', amount: 56000, memo: '' }], [], today);
+  assert.ok(!r.some((x) => x.label === '통신'));
   // 규칙 만들기: 형식 OK, 이번 달은 다시 안 만들고 다음 달부터
   const rule = ruleFromSuggestion(nf, 'r-new', today);
   assert.ok(isValidRecurring([rule]));
@@ -162,4 +165,16 @@ console.log('analysis unit tests: all passed');
     assert.deepEqual(dueMonths(r2, new Date(2026, 10, 25)).map((x) => x.date), ['2026-11-25']);
   }
   console.log('subscription unit tests: all passed');
+}
+// CSV 내보내기: 지운 카드의 할부 내역은 현금·기타, 할부 칸 비움
+{
+  const { buildTxCsv } = await import('../../src/lib/exportTx.js');
+  const rows = [
+    { id: 'a', date: '2026-11-01', type: 'expense', category: '쇼핑', amount: 600000, memo: '=SUM(A1)', cardId: 'gone', inst: 6, tags: [] },
+    { id: 'b', date: '2026-11-02', type: 'expense', category: '쇼핑', amount: 300000, memo: '', cardId: 'k1', inst: 3, tags: [] },
+  ];
+  const csv = buildTxCsv(rows, { cards: [{ id: 'k1', name: '삼성' }] }).split('\r\n');
+  assert.equal(csv[1], "2026-11-01,지출,쇼핑,600000,'=SUM(A1),현금·기타,,");
+  assert.equal(csv[2], '2026-11-02,지출,쇼핑,300000,,삼성,3개월,');
+  console.log('csv unit tests: all passed');
 }

@@ -172,6 +172,8 @@ export function isValidItem(i) {
 
 export function isValidOp(o) {
   if (!o || typeof o !== 'object' || !isStr(String(o.opId ?? ''), 64)) return false;
+  // base: 이 작업을 만들 때 본 서버 버전 (017). undefined = 모름(확인 없이 저장), null = 서버에 없음(새로 추가)
+  if (o.base !== undefined && o.base !== null && !(Number.isSafeInteger(o.base) && o.base >= 0)) return false;
   if (o.kind === 'upsert') return isStr(o.id, 64) && isValidTx(o.data);
   if (o.kind === 'delete') return isStr(o.id, 64);
   if (o.kind === 'item') return isStr(o.id, 64) && isValidItem(o.data);
@@ -223,6 +225,10 @@ export const readCache = (uid) => {
     ? Object.fromEntries(Object.entries(c.items).filter(([id, i]) => isStr(id, 64) && isValidItem(i))) : {};
   const out = { tx, items };
   for (const k of Object.keys(SETTINGS)) out[k] = cleanSetting(k, c[k]);
+  // 서버 버전 표(017): 앱을 다시 열어 오프라인으로 고쳐도 "본 버전" 기준으로 확인되게 같이 보관
+  if (c._ver && typeof c._ver === 'object' && !Array.isArray(c._ver)) {
+    out._ver = Object.fromEntries(Object.entries(c._ver).filter(([k, v]) => isStr(k, 80) && Number.isSafeInteger(v) && v >= 0));
+  }
   return out;
 };
 export const writeCache = (uid, state, remember) => {
@@ -230,6 +236,7 @@ export const writeCache = (uid, state, remember) => {
   remove(cKey(uid));
   const data = { tx: state.tx, items: state.items, savedAt: Date.now() };
   for (const k of Object.keys(SETTINGS)) data[k] = state[k];
+  if (state._ver) data._ver = state._ver;
   return write(cKey(uid), data, kind);
 };
 export const EMPTY_STATE = Object.freeze({ tx: {}, items: {}, ...Object.fromEntries(Object.entries(SETTINGS).map(([k, d]) => [k, d.empty])) });
@@ -246,6 +253,41 @@ const targetKey = (o) => (isSetting(o.kind) ? `set:${o.kind}`
   : o.kind === 'renameCat' ? `rename:${o.opId}`
   : o.kind === 'item' || o.kind === 'itemDel' ? `item:${o.id}` : `tx:${o.id}`);
 export const sameTarget = (a, b) => targetKey(a) === targetKey(b);
+
+// ---------- 버전 확인 (017) ----------
+// 서버 상태의 _ver = { 'tx:ID': 3, 'item:ID': 1, 'set:budget': 2, ... } (017 전 DB면 없음)
+export const verKey = targetKey;
+const VERSIONED = new Set(['upsert', 'delete', 'item', 'itemDel']);
+export const isVersioned = (op) => VERSIONED.has(op.kind) || isSetting(op.kind);
+
+/**
+ * 작업에 "내가 본 버전(base)"을 붙임.
+ * - 같은 대상의 작업이 아직 목록에 있으면 그 작업의 base를 이어받음 (오프라인에서 여러 번 고쳐도 처음 본 버전 기준)
+ * - 아니면 서버 상태의 버전. 내역·물품이 서버에 없으면 null(새로 추가), 설정 칸은 0(한 번도 안 바뀜)
+ * - 서버 버전을 모르면(017 전, 아직 못 받음) 붙이지 않음 → 예전처럼 확인 없이 저장
+ */
+export function withBase(op, queue, ver) {
+  if (!isVersioned(op) || op.base !== undefined) return op;
+  const pending = queue.find((o) => sameTarget(o, op));
+  if (pending) return pending.base === undefined ? op : { ...op, base: pending.base };
+  if (!ver) return op;
+  const v = ver[targetKey(op)];
+  return { ...op, base: v ?? (isSetting(op.kind) ? 0 : null) };
+}
+
+/** 작업 하나가 서버에 올라간 뒤: 같은 대상의 남은 작업(보내는 사이에 또 고친 것)을 새 버전 기준으로 */
+export function rebase(queue, op, version) {
+  if (version === undefined) return queue;
+  return queue.map((o) => (o.opId !== op.opId && sameTarget(o, op) && o.base === op.base ? { ...o, base: version } : o));
+}
+
+/** 서버 상태의 버전 표 갱신 (version = null 이면 지움: 삭제됨) */
+export function setVer(state, op, version) {
+  if (!state._ver || version === undefined) return state;
+  const _ver = { ...state._ver };
+  if (version === null) delete _ver[targetKey(op)]; else _ver[targetKey(op)] = version;
+  return { ...state, _ver };
+}
 
 export function coalesce(queue, op) {
   return [...queue.filter((o) => !sameTarget(o, op)), op];

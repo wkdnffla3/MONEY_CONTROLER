@@ -39,10 +39,22 @@ export default function MembersForm({ members, meId, onSave }) {
 
   const submit = (e) => {
     e.preventDefault();
-    const cleaned = list.map((m) => ({ ...m, name: m.name.trim() }));
+    // 이름만 쓰고 '추가'를 안 누른 채 저장해도 그 사람까지 저장 (말없이 사라지지 않게)
+    let all = list;
+    let myId = me;
+    const pending = newName.trim();
+    if (pending) {
+      if (list.length >= MAX_MEMBERS) { setError(`최대 ${MAX_MEMBERS}명까지 등록할 수 있어요.`); return; }
+      if (!list.some((m) => m.name.trim() === pending)) {
+        const m = { id: newId(), name: pending.slice(0, MAX_NAME), color: nextColor() };
+        all = [...list, m];
+        if (!myId) myId = m.id;
+      }
+    }
+    const cleaned = all.map((m) => ({ ...m, name: m.name.trim() }));
     if (cleaned.some((m) => !m.name)) { setError('이름이 비어 있는 사람이 있어요.'); return; }
     if (new Set(cleaned.map((m) => m.name)).size !== cleaned.length) { setError('같은 이름이 두 번 있어요.'); return; }
-    onSave(cleaned, me);
+    onSave(cleaned, myId);
   };
 
   const removedCount = members.filter((m) => !list.some((x) => x.id === m.id)).length;

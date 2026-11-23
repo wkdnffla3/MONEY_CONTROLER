@@ -1,3 +1,4 @@
+import { leftLedger } from '../../src/lib/leftLedger.js';
 import assert from 'node:assert/strict';
 import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount, resumeRule, ruleOfTx, repeatMarker } from '../../src/lib/recurring.js';
 import { csvCell, toCsv } from '../../src/lib/csv.js';
@@ -157,5 +158,15 @@ assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' })
   assert.equal(ruleOfTx([a, b], 'other'), null);
   const mark = repeatMarker([a, b]);
   assert.ok(mark('tx-old') && mark('rec-zz-2026-11') && !mark('other'));
+}
+// 공유 가계부에서 나가거나 내보내지면 그 가계부 사본만 지움
+{
+  const U = 'u', S = 's', T = 't';
+  assert.equal(leftLedger(U, { ledgerId: S }, { ledgerId: U }), S);
+  assert.equal(leftLedger(U, { ledgerId: S }, null), S);
+  assert.equal(leftLedger(U, { ledgerId: S }, { ledgerId: S }), null);
+  assert.equal(leftLedger(U, { ledgerId: U }, { ledgerId: S }), null); // 참여: 내 가계부는 그대로
+  assert.equal(leftLedger(U, null, { ledgerId: S }), null);
+  assert.equal(leftLedger(U, { ledgerId: S }, { ledgerId: T }), S);
 }
 console.log('feature unit tests: all passed');
