@@ -1,4 +1,4 @@
-// 새 내역 입력에서 "🔁 매달 반복": 내역 + 반복 규칙을 함께 저장, 다음 달 자동 기록, 지난달 날짜면 빠진 달 채움, 할부·가득 참은 꺼짐
+// "🔁 매달 반복": 새 내역에서 켜기, 이미 있는 내역에서 켜기·끄기. 다음 달 자동 기록, 빠진 달 채움, 할부·가득 참은 꺼짐
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, open, seedScript, settings, db, pending, norm } from './helpers.mjs';
@@ -89,13 +89,13 @@ describe('새 내역 → 매달 반복', () => {
     await ctx.close();
   });
 
-  test('수정 화면엔 버튼 없음, 할부·반복 100개 가득이면 꺼짐', async () => {
+  test('수정 화면은 꺼진 상태로 시작, 할부·반복 100개 가득이면 꺼짐', async () => {
     const card = { id: 'c1', name: '신한', closeDay: 15, payDay: 25, color: 0 };
     const full = Array.from({ length: 100 }, (_, i) => ({ id: 'r' + i, type: 'expense', amount: 1000, category: '식비', memo: '', memberId: null, day: 1, start: '2026-01', end: null, last: '2026-11', active: true }));
     let { ctx, page } = await open(env, { path: '#list', seed: seedScript({ settingsRow: settings({ cards: [card] }), transactions: [{ id: 't1', user_id: 'u1', type: 'expense', amount: 1000, category: '식비', memo: '기존', date: '2026-11-01', member_id: null, tags: [], card_id: null, inst_months: 1, created_at: 1 }] }) });
     await page.click('.tx:has-text("기존")');
     await page.waitForSelector('.sheet');
-    assert.equal(await page.locator('.sheet .repeat-toggle').count(), 0);
+    assert.equal(await page.locator('.sheet .repeat-toggle').getAttribute('aria-pressed'), 'false'); // 수정 화면: 반복 아닌 내역은 꺼진 상태로 보임
     await page.click('.sheet button[aria-label="닫기"]');
     await fill(page, { amount: 600000 });
     await page.click('.sheet .chip:has-text("신한")');
@@ -166,6 +166,90 @@ describe('새 내역 → 매달 반복', () => {
     d = await db(page);
     assert.deepEqual(d.transactions.map((t) => `${t.memo}:${t.date}`), ['구독b:2026-11-25']);
     assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+});
+
+describe('내역에서 반복 켜기·끄기', () => {
+  const { tx } = { tx: (id, o) => ({ id, user_id: 'u1', type: 'expense', amount: 9900, category: '식비', memo: '', date: '2026-11-07', member_id: null, tags: [], card_id: null, inst_months: 1, created_at: 1, ...o }) };
+  const openTx = async (page, memo) => { await page.click(`.tx:has-text("${memo}")`); await page.waitForSelector('.sheet'); };
+
+  test('이미 있는 내역을 반복으로 → 규칙 생성(그 내역과 연결), 🔁 표시, 다음 달 자동 기록 / 다시 끄면 규칙만 지움', async () => {
+    const { ctx, page, errs } = await open(env, {
+      seed: seedScript({ transactions: [tx('t1', { memo: '넷플릭스' })] }), path: '#list', contextOptions: KST,
+      beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-18T10:00:00+09:00') }),
+    });
+    assert.equal(await page.locator('.tx:has-text("넷플릭스") .rec-mark').count(), 0);
+    await openTx(page, '넷플릭스');
+    const toggle = page.locator('.sheet .repeat-toggle');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'false');
+    await toggle.click();
+    assert.match(norm(await page.innerText('.sheet .repeat-row')), /매달 7일에 자동으로 기록돼요/);
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(800);
+    assert.match(norm(await page.innerText('.toast')), /🔁 매달 7일 반복 등록/);
+    let d = await db(page);
+    const rule = d.settings[0].recurring[0];
+    assert.deepEqual({ day: rule.day, start: rule.start, last: rule.last, srcTx: rule.srcTx }, { day: 7, start: '2026-11', last: '2026-11', srcTx: 't1' });
+    assert.equal(d.transactions.filter((x) => x.memo === '넷플릭스').length, 1); // 이번 달 중복 없음
+    assert.equal(await page.locator('.tx:has-text("넷플릭스") .rec-mark').count(), 1);
+    // 다시 열면 켜져 있음 → 끄고 저장
+    await openTx(page, '넷플릭스');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    assert.match(norm(await page.innerText('.sheet .repeat-row')), /매달 7일 반복 중/);
+    await toggle.click();
+    assert.match(norm(await page.innerText('.sheet .repeat-row')), /반복을 해제/);
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(800);
+    assert.match(norm(await page.innerText('.toast')), /반복 해제/);
+    d = await db(page);
+    assert.equal(d.settings[0].recurring.length, 0);
+    assert.equal(d.transactions.filter((x) => x.memo === '넷플릭스').length, 1); // 내역은 그대로
+    assert.equal(await page.locator('.tx:has-text("넷플릭스") .rec-mark').count(), 0);
+    assert.equal((await pending(page)).length, 0);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('자동 기록된 내역에서 반복 해제 → 규칙 삭제, 다음 달에 안 생김', async () => {
+    const rule = { id: 'r1', type: 'expense', amount: 55000, category: '식비', memo: '통신비', memberId: null, day: 5, start: '2026-10', end: null, last: '2026-11', active: true };
+    const { ctx, page, errs } = await open(env, {
+      seed: seedScript({ transactions: [tx('rec-r1-2026-11', { memo: '통신비', amount: 55000, date: '2026-11-05' })], settingsRow: settings({ recurring: [rule] }) }),
+      path: '#list', contextOptions: KST,
+      beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-18T10:00:00+09:00') }),
+    });
+    await openTx(page, '통신비');
+    const toggle = page.locator('.sheet .repeat-toggle');
+    assert.equal(await toggle.getAttribute('aria-pressed'), 'true');
+    await toggle.click();
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(800);
+    assert.equal((await db(page)).settings[0].recurring.length, 0);
+    await page.clock.runFor(20 * 24 * 3600 * 1000); // 12월 8일
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await page.waitForTimeout(800);
+    assert.equal((await db(page)).transactions.filter((x) => x.memo === '통신비').length, 1);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('반복이 가득 차도(100개) 이미 반복 중인 내역은 끌 수 있고, 아닌 내역은 켤 수 없음', async () => {
+    const many = Array.from({ length: 100 }, (_, i) => ({ id: `q${i}`, type: 'expense', amount: 1000, category: '식비', memo: '', memberId: null, day: 28, start: '2026-11', end: null, last: '2026-11', active: true }));
+    const { ctx, page } = await open(env, {
+      seed: seedScript({ transactions: [tx('rec-q3-2026-11', { memo: '반복중' }), tx('t2', { memo: '일반' })], settingsRow: settings({ recurring: many }) }),
+      path: '#list', contextOptions: KST,
+      beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-18T10:00:00+09:00') }),
+    });
+    await openTx(page, '일반');
+    assert.equal(await page.locator('.sheet .repeat-toggle').isDisabled(), true);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await openTx(page, '반복중');
+    assert.equal(await page.locator('.sheet .repeat-toggle').isDisabled(), false);
+    await page.click('.sheet .repeat-toggle');
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(800);
+    assert.equal((await db(page)).settings[0].recurring.length, 99);
     await ctx.close();
   });
 });

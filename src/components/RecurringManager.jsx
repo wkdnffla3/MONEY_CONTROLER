@@ -118,6 +118,7 @@ function RuleForm({ rule, members, onCancel, onDone }) {
       end: end || null,
       last: rule?.last ?? null, // 이미 등록한 달은 유지 → 수정해도 지난 달이 다시 생기지 않음
       active: rule?.active ?? true,
+      ...(rule?.srcTx ? { srcTx: rule.srcTx } : {}), // 내역에서 반복으로 바꾼 경우 그 내역과의 연결 유지
     });
   };
 

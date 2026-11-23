@@ -22,7 +22,7 @@ const MAX_AMOUNT = 9_999_999_999;
  * onSubmit(data, { repeat }) 는 Promise 를 돌려줘야 함 — 성공하면 새 내역 모드에서 입력값을 비움.
  * repeat: 새 내역에서 "🔁 매달 반복"을 켰는지 (canRepeat=false 면 버튼 꺼짐: 반복 내역이 가득 참)
  */
-export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null, canRepeat = true }) {
+export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDelete, autoFocus, members = [], defaultMemberId = null, canRepeat = true, repeatRule = null }) {
   const seed = initial || prefill || null;
   const uid = useId();
   const amountRef = useRef(null);
@@ -42,7 +42,8 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
   const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(prefill?.memberId ?? defaultMemberId)));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [repeat, setRepeat] = useState(false); // 새 내역: 매달 반복으로도 등록
+  // 새 내역: 매달 반복으로도 등록 / 수정: 반복 켜기·끄기 (repeatRule = 이 내역과 연결된 규칙)
+  const [repeat, setRepeat] = useState(!!(initial && repeatRule));
   // 새 내역 입력칸이 계속 떠 있는 동안(PC 오른쪽) 자정이 지나 기본 날짜가 바뀌면, 사용자가 날짜를 직접 바꾸지 않았을 때만 따라감
   const lastDefault = useRef(defaultDate);
   useEffect(() => {
@@ -80,7 +81,9 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
     submitting.current = true;
     setBusy(true);
     try {
-      const repeatOn = !initial && repeat && canRepeat && !(type === 'expense' && cardId && inst > 1);
+      const instBlocked = type === 'expense' && cardId && inst > 1;
+      // 수정: 이미 반복 중이면 그대로 둘 수 있음(가득 차도). 새로 켜는 건 자리가 있을 때만
+      const repeatOn = initial && repeatRule ? repeat : repeat && canRepeat && !instBlocked;
       await onSubmit({
         type,
         amount: n,
@@ -197,7 +200,16 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
         </div>
       </div>
 
-      {!initial && (() => {
+      {initial && repeatRule ? (
+        <div className="repeat-row">
+          <button type="button" className="chip repeat-toggle" aria-pressed={repeat} onClick={() => setRepeat((v) => !v)}>🔁 매달 반복</button>
+          <span className="hint">
+            {repeat
+              ? <>매달 {repeatRule.day}일 반복 중{repeatRule.active ? '' : ' (일시정지)'} · 금액·날짜 등 규칙은 ☰ → 반복 내역에서 바꿔요</>
+              : '저장하면 반복을 해제해요. 다음 달부터 자동으로 기록되지 않고, 이미 기록된 내역은 그대로 남아요'}
+          </span>
+        </div>
+      ) : (() => {
         const instBlock = type === 'expense' && cardId && inst > 1;
         const day = /^\d{4}-\d{2}-\d{2}$/.test(date) ? Number(date.slice(8, 10)) : null;
         const fill = repeat && day ? backfillCount(date) : 0;

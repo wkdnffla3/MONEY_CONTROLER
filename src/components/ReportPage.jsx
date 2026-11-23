@@ -9,12 +9,33 @@ const STEP = 10; // 펼친 묶음에서 한 번에 더 보여 줄 내역 수
 const md = (d) => d.slice(5).replace('-', '/');
 
 /** 펼친 묶음의 내역 목록 (큰 금액 순, 10개씩 더 보기). 누르면 그 내역 수정 화면 */
+// 펼친 내역의 정렬: 금액순(큰 것 먼저) · 최신순 · 오래된순. 고른 방식은 이 기기에 기억 (다른 묶음을 펼쳐도 같게)
+const SORT_KEY = 'ledger.reportSort';
+const SORTS = [['amount', '금액순'], ['new', '최신순'], ['old', '오래된순']];
+const readSort = () => { try { const v = localStorage.getItem(SORT_KEY); return SORTS.some(([k]) => k === v) ? v : 'amount'; } catch { return 'amount'; } };
+const byDate = (a, b) => (a.date === b.date ? (a.createdAt || 0) - (b.createdAt || 0) : a.date < b.date ? -1 : 1);
+export function sortItems(items, how) {
+  if (how === 'new') return [...items].sort((a, b) => byDate(b, a));
+  if (how === 'old') return [...items].sort(byDate);
+  return items; // 이미 큰 금액 순
+}
+
 function ItemList({ items, cats, onOpenTx, showCategory }) {
   const [n, setN] = useState(STEP);
+  const [sort, setSortState] = useState(readSort);
+  const setSort = (v) => { setSortState(v); try { localStorage.setItem(SORT_KEY, v); } catch { /* 이번만 */ } };
+  const list = useMemo(() => sortItems(items, sort), [items, sort]);
   return (
     <div className="share-items">
+      {items.length > 1 && (
+        <div className="item-sort" role="group" aria-label="정렬">
+          {SORTS.map(([k, l]) => (
+            <button key={k} type="button" className="chip" aria-pressed={sort === k} onClick={() => setSort(k)}>{l}</button>
+          ))}
+        </div>
+      )}
       <ol>
-        {items.slice(0, n).map((t) => (
+        {list.slice(0, n).map((t) => (
           <li key={t.id}>
             <button type="button" onClick={() => onOpenTx?.(t.id)}>
               <span className="d num">{md(t.date)}</span>

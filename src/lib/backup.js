@@ -141,7 +141,11 @@ export function planRestore(backup, current, { overwrite = false, sameLedger = t
     count.itemsChanged += 1;
     if (overwrite) items.push([id, data]);
   }
-  const settings = planSettings(current, backup.settings, overwrite);
+  // 다른 가계부의 백업: 반복 규칙이 가리키는 원래 내역(srcTx)도 새 ID로
+  const bakSettings = !sameLedger && Array.isArray(backup.settings?.recurring)
+    ? { ...backup.settings, recurring: backup.settings.recurring.map((r) => (r.srcTx ? { ...r, srcTx: txIdMap.get(r.srcTx) ?? null } : r)) }
+    : backup.settings;
+  const settings = planSettings(current, bakSettings, overwrite);
   return { tx, items, settings, count };
 }
 
