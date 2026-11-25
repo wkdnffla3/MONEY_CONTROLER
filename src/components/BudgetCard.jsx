@@ -1,6 +1,7 @@
 import { daysInMonth, isCurrentMonth, won } from '../lib/format';
 
-export default function BudgetCard({ budget, exp, ym, onEdit, note = '' }) {
+// planned: 이번 달 남은 날에 자동으로 기록될 반복 지출 합계 (월세 등) → 하루 쓸 수 있는 금액에서 미리 뺌
+export default function BudgetCard({ budget, exp, ym, onEdit, note = '', planned = 0 }) {
   let body;
   if (!budget) {
     body = (
@@ -15,7 +16,10 @@ export default function BudgetCard({ budget, exp, ym, onEdit, note = '' }) {
     let foot;
     if (isCurrentMonth(ym)) {
       const remain = daysInMonth(ym.y, ym.m) - new Date().getDate() + 1;
-      foot = over ? `예산을 ${won(-left)} 넘었어요.` : `남은 ${remain}일 동안 하루 ${won(left / remain)}까지 쓸 수 있어요.`;
+      const free = left - planned;
+      foot = over ? `예산을 ${won(-left)} 넘었어요.`
+        : free < 0 ? `곧 기록될 반복 지출 ${won(planned)}까지 더하면 예산을 ${won(-free)} 넘어요.`
+          : `남은 ${remain}일 동안 하루 ${won(free / remain)}까지 쓸 수 있어요.${planned ? ` (곧 기록될 반복 지출 ${won(planned)} 빼고)` : ''}`;
     } else {
       const now = new Date();
       const future = ym.y * 12 + ym.m > now.getFullYear() * 12 + now.getMonth() + 1; // 다음 달 이후 (미리 넣은 내역만 있음)

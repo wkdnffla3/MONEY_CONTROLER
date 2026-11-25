@@ -147,8 +147,11 @@ export default function ReportPage({ allTx, year, onYear, members, cards, who, w
               })}
             </svg>
             <div className="trend-legend">
-              <span><i className="sw inc" />수입 · 월평균 {won(r.inc / 12)}</span>
-              <span><i className="sw exp" />지출 · 월평균 {won(r.exp / 12)}</span>
+              <span><i className="sw inc" />수입 · 월평균 {won(r.avg.inc)}</span>
+              <span><i className="sw exp" />지출 · 월평균 {won(r.avg.exp)}</span>
+              {r.avg.months > 0 && r.avg.months < 12 && (
+                <span className="hint">기록 있는 {r.avg.months}개월 평균{r.avg.excludesCurrent ? ' (이번 달 제외)' : ''}</span>
+              )}
             </div>
           </div>
 

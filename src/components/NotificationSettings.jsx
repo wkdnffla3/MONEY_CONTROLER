@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { setPrefs } from '../lib/notify';
-import { disablePush, enablePush, getPushState, syncPushPrefs } from '../lib/push';
+import { disablePush, enablePush, getPushState, isSamsungBrowser, syncPushPrefs } from '../lib/push';
 import { koError } from '../lib/errors';
 import { isSchemaError } from '../lib/outbox';
 
@@ -15,6 +15,7 @@ const PUSH_TEXT = {
   denied: ['차단됨', '브라우저 설정에서 이 사이트의 알림을 "허용"으로 바꾼 뒤 다시 열어 주세요.'],
   'no-key': ['설정 필요', '관리자 설정(VAPID 키, Edge Function)이 아직 안 됐어요. README의 "웹 푸시 설정"을 따라 해 주세요. 그 전에도 앱 안 알림은 동작해요.'],
   'no-sw': ['사용 불가', '배포된 사이트에서만 켤 수 있어요 (개발 서버에서는 서비스워커가 꺼져 있어요).'],
+  inapp: ['이 브라우저에선 불가', '카카오톡·네이버·인스타그램 같은 앱 안 브라우저에서는 웹 푸시를 켤 수 없어요. 오른쪽 위 메뉴의 "다른 브라우저로 열기"로 크롬(아이폰은 사파리)에서 열어 주세요.'],
   'ios-install': ['홈 화면 앱에서 가능', '아이폰·아이패드는 Safari 공유 버튼 → "홈 화면에 추가" 후, 홈 화면 아이콘으로 열어서 켜 주세요 (iOS 16.4 이상).'],
   unsupported: ['지원 안 됨', '이 브라우저는 웹 푸시를 지원하지 않아요. 앱 안 알림은 동작해요.'],
 };
@@ -32,6 +33,8 @@ const KINDS = [
 export default function NotificationSettings({ uid, ledgerId, prefs, onPrefs, onPushChange, onToast }) {
   const [push, setPush] = useState('checking');
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState(''); // 켜는 중 지금 단계 (멈추면 어디서 멈췄는지 보임)
+  const [err, setErr] = useState('');   // 실패 이유 (알림은 금방 사라지니 화면에도 남김)
 
   useEffect(() => {
     let alive = true;
@@ -47,16 +50,19 @@ export default function NotificationSettings({ uid, ledgerId, prefs, onPrefs, on
 
   const togglePush = async () => {
     setBusy(true);
+    setErr('');
     try {
-      const s = push === 'on' ? await disablePush() : await enablePush(prefs, ledgerId);
+      const s = push === 'on' ? await disablePush() : await enablePush(prefs, ledgerId, setStep);
       setPush(s);
       onPushChange?.();
       onToast(s === 'on' ? '이 기기에서 푸시 알림을 켰어요' : '이 기기의 푸시 알림을 껐어요');
     } catch (e) {
       setPush(await getPushState().catch(() => 'off'));
       onToast(`푸시 알림을 바꾸지 못했어요 · ${msgOf(e)}`);
+      setErr(msgOf(e));
     } finally {
       setBusy(false);
+      setStep('');
     }
   };
 
@@ -94,6 +100,14 @@ export default function NotificationSettings({ uid, ledgerId, prefs, onPrefs, on
             {push === 'on' && <button type="button" className="btn" onClick={testPush}>테스트 알림</button>}
           </div>
         )}
+        {push === 'off' && isSamsungBrowser() && (
+          <p className="hint">삼성 인터넷: 권한 창이 안 뜨면 휴대폰 설정 → 애플리케이션 → 삼성 인터넷 → <b>알림 허용</b>, 그리고 삼성 인터넷 설정 → 사이트 및 다운로드 → 알림에서 <b>사이트의 알림 요청 허용</b>을 켜 주세요.</p>
+        )}
+        {push === 'denied' && isSamsungBrowser() && (
+          <p className="hint">삼성 인터넷 메뉴(≡) → 설정 → 사이트 및 다운로드 → 알림 → 이 사이트를 <b>허용</b>으로 바꾼 뒤 다시 열어 주세요.</p>
+        )}
+        {busy && step && <p className="hint" role="status">{step}</p>}
+        {!busy && err && <p className="err" role="alert">{err}</p>}
         <p className="hint">기기마다 따로 켜야 해요. 로그아웃하면 이 기기는 자동으로 꺼져요.</p>
       </section>
 

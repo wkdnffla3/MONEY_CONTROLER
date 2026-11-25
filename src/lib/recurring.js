@@ -46,6 +46,19 @@ export function dueMonths(rule, today = new Date()) {
 }
 
 /**
+ * 이번 달에 아직 안 왔지만 곧 자동으로 기록될 반복 내역 (예산의 "하루 쓸 수 있는 금액" 계산용)
+ * 반환: [{ rule, date }] — 이번 달 그날이 오늘 이후이고, 아직 기록 안 됐고, 기간 안인 활성 규칙
+ */
+export function upcomingThisMonth(rules, today = new Date(), type = 'expense') {
+  const ym = ymOf(today);
+  const cur = toNum(ym);
+  return (rules || []).filter((r) => r.active && r.type === type
+    && toNum(r.start) <= cur && (!r.end || toNum(r.end) >= cur) && (!r.last || toNum(r.last) < cur))
+    .map((r) => ({ rule: r, date: occurrenceDate(ym, r.day) }))
+    .filter(({ date }) => Number(date.slice(8)) > today.getDate());
+}
+
+/**
  * 일시정지했던 규칙을 다시 시작: 멈춰 있던 달은 건너뜀 (그동안 안 낸 것으로 봄).
  * 이번 달의 그날이 이미 지났으면 이번 달도 건너뛰고, 아직이면 그날 기록됨.
  */
@@ -75,6 +88,9 @@ export function planRecurring(rules, today = new Date()) {
           memo: r.memo || '',
           date,
           memberId: r.memberId ?? null,
+          tags: Array.isArray(r.tags) ? r.tags : [],
+          cardId: r.type === 'expense' ? r.cardId ?? null : null, // 카드로 내는 구독료 → 그 카드 청구 예정에 잡힘
+          inst: 1,
           createdAt: Date.parse(`${date}T00:00:00Z`), // 기기마다 같은 값 → 같은 내용
         },
       });
@@ -108,6 +124,9 @@ export function ruleFromTx(data, id, srcTx = null) {
     id, type: data.type, amount: data.amount, category: data.category, memo: data.memo || '',
     memberId: data.memberId ?? null, day: Number(data.date.slice(8, 10)), start: ym, end: null, last: ym, active: true,
   };
+  // 결제 카드·태그도 이어감 (카드로 내는 구독료가 다음 달부터 현금으로 잡히지 않게)
+  if (data.type === 'expense' && data.cardId) rule.cardId = data.cardId;
+  if (Array.isArray(data.tags) && data.tags.length) rule.tags = [...data.tags];
   // 이미 있던 내역을 반복으로 바꾼 경우: 그 내역 ID를 기억 (내역에서 반복을 다시 끌 수 있게)
   if (srcTx) rule.srcTx = srcTx;
   return rule;

@@ -160,6 +160,12 @@ header.top{display:flex;align-items:center;justify-content:space-between;gap:12p
 .toast button{color:var(--accent-soft);font-weight:700;font-size:13px}
 .notice{font-size:12.5px;background:var(--surface-2);border:1px dashed var(--line);border-radius:12px;padding:10px 12px;color:var(--muted);margin-bottom:14px;display:none}
 .notice.show{display:block}
+/* 시트: 입력하다 닫을 때 확인 */
+.leave-ask{display:flex;align-items:center;flex-wrap:wrap;gap:8px;background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 12px;font-size:13.5px}
+.leave-ask span{flex:1;min-width:0}
+/* 새 버전 알림 */
+.update-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--accent, var(--line));border-radius:12px;padding:8px 12px;margin:0 0 12px;font-size:13px}
+.update-bar span{flex:1;min-width:0}
 
 /* desktop sidebar form */
 .side-form{display:none}

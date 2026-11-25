@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { fromItemRow, fromRow, newId, useLedger } from './hooks/useLedger';
 import { useToast } from './hooks/useToast';
+import { useAppUpdate } from './hooks/useAppUpdate';
 import { configError } from './lib/supabase';
 import { koError } from './lib/errors';
 import {
@@ -15,7 +16,7 @@ import BudgetCard from './components/BudgetCard';
 import CategoryDonut from './components/CategoryDonut';
 import DailyChart from './components/DailyChart';
 import TxForm from './components/TxForm';
-import Sheet from './components/Sheet';
+import Sheet, { sheetGuard } from './components/Sheet';
 import Toast from './components/Toast';
 import MemberSummary from './components/MemberSummary';
 import WhoFilter from './components/WhoFilter';
@@ -27,12 +28,12 @@ import MonthlyTrend from './components/MonthlyTrend';
 import SettingsMenu from './components/SettingsMenu';
 import { backupDue } from './lib/backup';
 import { PRIVACY_HASH } from './lib/privacy';
-import { MAX_RECURRING, recurringTxId, repeatMarker, ruleFromTx, ruleOfTx } from './lib/recurring';
+import { MAX_RECURRING, recurringTxId, repeatMarker, ruleFromTx, ruleOfTx, upcomingThisMonth } from './lib/recurring';
 import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCategories } from './lib/categories';
 import NavTabs from './components/NavTabs';
-import { summarize as summarizeShopping } from './lib/shopping';
+import { MAX_QTY, summarize as summarizeShopping } from './lib/shopping';
 import { FormDataContext } from './lib/formData';
-import { allTags, compareMonths, lastPrices as computeLastPrices } from './lib/analysis';
+import { allTags, compareMonths, lastPrices as computeLastPrices, normalizeName } from './lib/analysis';
 import CardBills from './components/CardBills';
 import MonthCompare from './components/MonthCompare';
 import NotifyBanner from './components/NotifyBanner';
@@ -89,6 +90,7 @@ export default function App() {
   });
   notifyRef.current = notifier.notify;
   const { toast, show, hide } = useToast();
+  const appUpdate = useAppUpdate();
   // 저장 실패 알림. 다른 기기가 먼저 바꾼 충돌은 아래 알림(내 것으로 저장 버튼)이 따로 뜨므로 건너뜀
   const fail = (prefix) => (e) => { if (e?.code !== 'conflict') show(`${prefix} · ${koError(e)}`); };
   // 017 버전 확인: 다른 기기·사람이 먼저 고친 것을 덮어쓰지 않고 알림. 버튼으로 내 내용을 최신 기준으로 다시 저장
@@ -168,6 +170,8 @@ export default function App() {
     const onPop = () => {
       if (skipPops.current > 0) { skipPops.current -= 1; return; }
       if (!sheetEntry.current) return;
+      // 입력하다 만 내용이 있으면 닫지 않고 물어봄 (기록 자리는 다시 쌓아 둠)
+      if (sheetGuard.blocked?.()) { window.history.pushState({ sheet: true }, '', window.location.href); return; }
       sheetEntry.current = false;
       // 다른 시트에서 넘어온 시트(예: 검색 → 내역 수정)면 그 시트로, 아니면 닫기 (돌아간 시트는 위 효과가 기록을 다시 쌓음)
       const s = sheetRef.current;
@@ -349,7 +353,17 @@ export default function App() {
     window.scrollTo(0, 0);
   };
   const shop = {
-    add: (data) => notifySaved(ledger.saveItem(newId(), data), `${data.name} 추가했어요`),
+    // 빠른 추가: 살 것 목록에 같은 이름(띄어쓰기·대소문자 무시)이 이미 있으면 새로 만들지 않고 수량 +1
+    add: (data) => {
+      const key = normalizeName(data.name);
+      const dup = Object.entries(shopItems).find(([, i]) => i.status === 'todo' && normalizeName(i.name) === key);
+      if (dup && dup[1].qty < MAX_QTY) {
+        const [id, it] = dup;
+        const qty = Math.min(MAX_QTY, it.qty + (data.qty || 1));
+        return notifySaved(ledger.saveItem(id, { ...it, qty }), `${it.name} 수량을 ${qty}개로 늘렸어요`);
+      }
+      return notifySaved(ledger.saveItem(newId(), data), `${data.name} 추가했어요`);
+    },
     open: (id) => setSheet({ kind: 'item', id }),
     openNew: (prefill) => setSheet({ kind: 'item', prefill }),
     toggle: (id) => {
@@ -398,7 +412,8 @@ export default function App() {
     const id = newId();
     const data = {
       type: f.type, amount: f.amount, category: f.category, memo: f.memo || '', date: todayStr(),
-      memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : (formDefaultMember ?? null),
+      // 사람이 정해진 즐겨찾기 → 그 사람, '공동' 묶음(사람 없음·지운 사람) → 공동 (화면의 묶음과 같게)
+      memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : null,
       tags: f.tags || [], cardId: f.cardId && ledger.cards.some((c) => c.id === f.cardId) ? f.cardId : null, inst: 1, createdAt: Date.now(),
     };
     if (!isCurrentMonth(ym)) setYm(thisMonth());
@@ -407,7 +422,7 @@ export default function App() {
         () => ledger.deleteTx(id).then(() => show('되돌렸어요')).catch(() => {})))
       .catch(fail('저장하지 못했어요'));
   };
-  const saveFavorites = (list, msg) => notifySaved(ledger.saveSetting('favorites', list), msg);
+  const saveFavorites = (...a) => withUndo('favorites')(...a); // withUndo 는 아래에 정의
   const favoriteFromTx = (t) => {
     if (ledger.favorites.length >= 20) { show('즐겨찾기는 20개까지 만들 수 있어요'); return; }
     const label = (t.memo || t.category).trim().slice(0, 16) || t.category.slice(0, 16);
@@ -479,13 +494,25 @@ export default function App() {
   );
 
   // 공통: 설정 저장 후 결과 알림
-  const notifySaved = (p, msg) => p
-    .then(({ synced }) => show(msg + savedSuffix(synced, navigator.onLine !== false)))
+  const notifySaved = (p, msg, undo) => p
+    .then(({ synced }) => show(msg + savedSuffix(synced, navigator.onLine !== false), undo))
     .catch(fail('저장하지 못했어요'));
+  // 목록 설정에서 하나 지운 뒤 "되돌리기": 그사이 바뀐 최신 목록에 원래 자리로 다시 넣음
+  const latestRef = useRef(ledger);
+  latestRef.current = ledger;
+  const undoRemove = (kind, item, index) => () => {
+    const cur = latestRef.current[kind] || [];
+    if (cur.some((x) => x.id === item.id)) return;
+    const next = [...cur.slice(0, index), item, ...cur.slice(index)];
+    notifySaved(ledger.saveSetting(kind, next), '되돌렸어요');
+  };
+  // onSave(list, msg, removed?) — removed: 지운 항목 하나 { item, index } → 되돌리기 버튼
+  const withUndo = (kind) => (list, msg, removed) => notifySaved(ledger.saveSetting(kind, list), msg,
+    removed ? undoRemove(kind, removed.item, removed.index) : undefined);
 
   // 반복 내역은 시트를 닫지 않고 바로바로 저장
   const saveCards = (list, msg) => notifySaved(ledger.saveSetting('cards', list), msg);
-  const saveRecurring = (rules, msg) => notifySaved(ledger.saveSetting('recurring', rules), msg);
+  const saveRecurring = withUndo('recurring');
   const saveCatBudgets = (value) => { closeSheet(); notifySaved(ledger.saveSetting('catBudgets', value), '카테고리별 예산을 저장했어요'); };
   const saveCategories = (cats, renames) => {
     // 상세 검색에서 고른 카테고리도 새 이름으로 (맞바꾸기도 한 번에)
@@ -601,6 +628,13 @@ export default function App() {
           onSync={ledger.syncNow}
           onMenu={() => setSheet({ kind: 'menu' })}
         />
+        {appUpdate.available && (
+          <div className="update-bar" role="status">
+            <span>새 버전이 있어요{ledger.pendingCount ? ' · 못 보낸 내역은 이 기기에 그대로 남아요' : ''}</span>
+            <button type="button" className="btn primary sm" onClick={() => window.location.reload()}>새로고침</button>
+            <button type="button" className="linkbtn" aria-label="나중에" onClick={appUpdate.dismiss}>나중에</button>
+          </div>
+        )}
 
         <InstallBanner />
 
@@ -676,14 +710,17 @@ export default function App() {
               onToday={() => setYm(thisMonth())}
             />
             <WhoFilter members={members} who={whoValid} onChange={setWho} />
-            <Summary inc={totals.inc} exp={totals.exp} cmp={monthCmp} who={whoLabel} />
+            <Summary inc={totals.inc} exp={totals.exp} cmp={monthCmp} who={whoLabel}
+              monthLabel={isCurrentMonth(ym) ? '이번 달' : `${ym.y !== new Date().getFullYear() ? `${ym.y}년 ` : ''}${ym.m}월`} />
             <FavoritesBar favorites={ledger.favorites} members={members} meId={meId} onUse={applyFavorite} onManage={() => setSheet({ kind: 'favorites' })} />
             <section className="grid insights">
               <SubscriptionFinder suggestions={subSuggestions} onRegister={registerSubscription} onDismiss={dismissSubscription} />
               <BudgetCard budget={ledger.budget} exp={householdExp} ym={ym} onEdit={() => setSheet({ kind: 'budget' })}
+                planned={isCurrentMonth(ym) ? upcomingThisMonth(ledger.recurring, new Date()).reduce((a, x) => a + x.rule.amount, 0) : 0}
                 note={whoLabel ? '예산은 모두의 지출 합계 기준이에요.' : ''} />
               <CategoryDonut expenses={expenses} total={totals.exp} />
-              <CategoryBudgetCard catBudgets={ledger.catBudgets} monthTx={monthTx} onEdit={() => setSheet({ kind: 'catBudgets' })} />
+              <CategoryBudgetCard catBudgets={ledger.catBudgets} monthTx={monthTx} onEdit={() => setSheet({ kind: 'catBudgets' })}
+                planned={isCurrentMonth(ym) ? upcomingThisMonth(ledger.recurring, new Date()).reduce((a, x) => ({ ...a, [x.rule.category]: (a[x.rule.category] || 0) + x.rule.amount }), {}) : {}} />
               <DailyChart list={viewTx} ym={ym} half />
               <MonthCompare allTx={whoTx} ym={ym} label={whoLabel} cmp={monthCmp} />
               <CardBills allTx={allTx} cards={ledger.cards} thisMonth={ledger.thisMonth} onManage={() => setSheet({ kind: 'cards' })} />
@@ -705,7 +742,7 @@ export default function App() {
       </button>
 
       {sheet?.kind === 'item' && (
-        <Sheet title={sheet.id ? '물품 수정' : '물품 추가'} onClose={closeSheet}>
+        <Sheet title={sheet.id ? '물품 수정' : '물품 추가'} onClose={closeSheet} guard>
           <ShopItemForm
             key={sheet.id || 'new'}
             initial={sheet.id ? shopItems[sheet.id] : null}
@@ -722,7 +759,7 @@ export default function App() {
         const cartItems = Object.entries(shopItems).filter(([, i]) => i.status === 'todo' && i.checked)
           .map(([id, i]) => ({ id, ...i })).sort((a, b) => a.createdAt - b.createdAt);
         return cartItems.length > 0 && (
-          <Sheet title={`결제 확정 · ${cartItems.length}개`} onClose={closeSheet}>
+          <Sheet title={`결제 확정 · ${cartItems.length}개`} onClose={closeSheet} guard>
             <PurchaseConfirm items={cartItems} members={members} defaultMemberId={meId}
               onConfirm={(opts) => confirmPurchase(cartItems.map((i) => i.id), opts)} />
           </Sheet>
@@ -730,13 +767,13 @@ export default function App() {
       })()}
 
       {sheet?.kind === 'add' && (
-        <Sheet title="내역 추가" onClose={closeSheet}>
+        <Sheet title="내역 추가" onClose={closeSheet} guard>
           <TxForm key={sheet.prefill?.id || 'new'} autoFocus defaultDate={sheet.prefill ? todayStr() : defaultDate} members={members}
             defaultMemberId={formDefaultMember} prefill={sheet.prefill} canRepeat={ledger.recurring.length < MAX_RECURRING} onSubmit={addTx} />
         </Sheet>
       )}
       {sheet?.kind === 'edit' && editing && (
-        <Sheet title="내역 수정" onClose={closeSheet}>
+        <Sheet title="내역 수정" onClose={closeSheet} guard>
           <TxForm
             key={editing.id}
             initial={editing}
@@ -753,7 +790,7 @@ export default function App() {
         </Sheet>
       )}
       {sheet?.kind === 'budget' && (
-        <Sheet title="월 예산" onClose={closeSheet}>
+        <Sheet title="월 예산" onClose={closeSheet} guard>
           <BudgetForm budget={ledger.budget} onSave={saveBudget} />
         </Sheet>
       )}
@@ -766,17 +803,17 @@ export default function App() {
         </Sheet>
       )}
       {sheet?.kind === 'recurring' && (
-        <Sheet title="반복 내역" onClose={closeSheet}>
+        <Sheet title="반복 내역" onClose={closeSheet} guard>
           <RecurringManager rules={ledger.recurring} members={members} onSave={saveRecurring} />
         </Sheet>
       )}
       {sheet?.kind === 'categories' && (
-        <Sheet title="카테고리 편집" onClose={closeSheet}>
+        <Sheet title="카테고리 편집" onClose={closeSheet} guard>
           <CategoryEditor counts={categoryCounts} onSave={saveCategories} />
         </Sheet>
       )}
       {sheet?.kind === 'catBudgets' && (
-        <Sheet title="카테고리별 예산" onClose={closeSheet}>
+        <Sheet title="카테고리별 예산" onClose={closeSheet} guard>
           <CategoryBudgetForm catBudgets={ledger.catBudgets} monthTx={monthTx} onSave={saveCatBudgets} />
         </Sheet>
       )}
@@ -839,7 +876,7 @@ export default function App() {
       )}
 
       {sheet?.kind === 'members' && (
-        <Sheet title="함께 쓰는 사람" onClose={closeSheet}>
+        <Sheet title="함께 쓰는 사람" onClose={closeSheet} guard>
           <MembersForm members={members} meId={meId} onSave={saveMembers} />
         </Sheet>
       )}

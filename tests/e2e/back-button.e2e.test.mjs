@@ -1,5 +1,5 @@
 // 휴대폰 뒤로 가기: 시트만 닫히고 화면(탭)은 그대로, 버튼으로 닫으면 기록이 남지 않음
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setup, open, tab, settle } from './helpers.mjs';
 const env = setup();
@@ -62,6 +62,62 @@ test('수정 중인 내역이 다른 기기에서 지워지면 시트를 닫고 
   await page.waitForTimeout(800);
   assert.equal(await sheetOpen(page), 0);
   assert.match(await page.innerText('.toast'), /다른 기기에서 지워진/);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+describe('입력하다 닫을 때 확인', () => {
+  test('금액을 입력한 채 바깥·Esc·뒤로 가기 → 닫지 않고 물어봄, "계속 입력"하면 그대로', async () => {
+    const { ctx, page, errs } = await open(env, { path: '#list' });
+    await page.click('button.fab');
+    await page.fill('.sheet .amount-input input', '12000');
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('.leave-ask').count(), 1);
+    await page.click('.leave-ask button:has-text("계속 입력")');
+    assert.equal(await page.locator('.sheet .amount-input input').inputValue(), '12,000');
+    await page.mouse.click(5, 5); // 바깥
+    assert.equal(await page.locator('.leave-ask').count(), 1);
+    await page.click('.leave-ask button:has-text("계속 입력")');
+    await page.goBack();
+    await page.waitForTimeout(300);
+    assert.equal(await sheetOpen(page), 1);
+    assert.equal(await page.locator('.leave-ask').count(), 1);
+    await page.click('.leave-ask button:has-text("닫기")');
+    await page.waitForTimeout(300);
+    assert.equal(await sheetOpen(page), 0);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('아무것도 안 고쳤거나 저장한 뒤엔 그냥 닫힘, 검색 같은 시트는 묻지 않음', async () => {
+    const { ctx, page, errs } = await open(env, { path: '#list' });
+    await page.click('button.fab');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    assert.equal(await sheetOpen(page), 0);
+    await page.click('button:has-text("상세 검색")');
+    await page.fill('.adv-search input[type="search"]', '점심');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    assert.equal(await sheetOpen(page), 0);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+});
+
+test('반복 내역: 규칙 입력하다 "취소"로 목록에 돌아오면 닫을 때 묻지 않음, 입력 중이면 물어봄', async () => {
+  const { menu } = await import('./helpers.mjs');
+  const { ctx, page, errs } = await open(env);
+  await menu(page, '반복 내역');
+  await page.click('.sheet button:has-text("+ 반복 내역 추가")');
+  await page.fill('#rr-amt', '5000');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.leave-ask').count(), 1);
+  await page.click('.leave-ask button:has-text("계속 입력")');
+  await page.click('.sheet button:has-text("취소")');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(300);
+  assert.equal(await sheetOpen(page), 0);
   assert.deepEqual(errs, []);
   await ctx.close();
 });

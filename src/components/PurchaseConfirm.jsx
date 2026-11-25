@@ -1,15 +1,21 @@
 import { useRef, useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
-import { SHARED_LABEL, memberColor } from '../lib/members';
+import { SHARED_LABEL, colorVar, memberColor } from '../lib/members';
 import { formatAmountInput, parseAmount, todayStr, won } from '../lib/format';
 import { MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
 import { defaultMemo, expectedTotal } from '../lib/shopping';
+import { useFormData } from '../lib/formData';
+
+// 마지막으로 고른 결제 카드 (이 기기). 장 볼 때는 보통 같은 카드라 다음에 기본으로
+const CARD_KEY = 'ledger.shopCard';
+const readCard = () => { try { return localStorage.getItem(CARD_KEY); } catch { return null; } };
+const writeCard = (v) => { try { if (v) localStorage.setItem(CARD_KEY, v); else localStorage.removeItem(CARD_KEY); } catch { /* 무시 */ } };
 
 /**
  * 결제 확정: 장바구니에 담은 물품을 가계부 지출로 기록.
  * - 한 건으로: 영수증 합계 하나로 기록 (카테고리 하나)
  * - 물품별로: 물품마다 따로 기록 (각 물품의 카테고리)
- * onConfirm(opts) — opts: { mode, date, category, memberId, memo, total, amounts }
+ * onConfirm(opts) — opts: { mode, date, category, memberId, cardId, memo, total, amounts }
  */
 export default function PurchaseConfirm({ items, members = [], defaultMemberId = null, onConfirm }) {
   const cats = useCategories();
@@ -26,6 +32,8 @@ export default function PurchaseConfirm({ items, members = [], defaultMemberId =
   const [date, setDate] = useState(todayStr());
   const [memo, setMemo] = useState(defaultMemo(items));
   const [error, setError] = useState('');
+  const { cards } = useFormData();
+  const [cardId, setCardId] = useState(() => { const c = readCard(); return c && cards.some((x) => x.id === c) ? c : null; });
   const sent = useRef(false); // 확정 버튼 두 번 누르기 방지
 
   const submit = (e) => {
@@ -38,13 +46,15 @@ export default function PurchaseConfirm({ items, members = [], defaultMemberId =
       if (!t) { setError('결제한 금액을 입력해 주세요.'); return; }
       if (t > MAX_AMOUNT) { setError('금액이 너무 커요.'); return; }
       sent.current = true;
-      onConfirm({ mode, date, category, memberId, memo: memo.trim() || defaultMemo(items), total: t, amounts: amountMap });
+      writeCard(cardId);
+      onConfirm({ mode, date, category, memberId, cardId, memo: memo.trim() || defaultMemo(items), total: t, amounts: amountMap });
     } else {
       const missing = items.filter((i) => !amountMap[i.id]);
       if (missing.length) { setError(`금액이 없는 물품이 있어요: ${missing.map((i) => i.name).join(', ')}`); return; }
       if (items.some((i) => amountMap[i.id] > MAX_AMOUNT)) { setError('금액이 너무 커요.'); return; }
       sent.current = true;
-      onConfirm({ mode, date, memberId, amounts: amountMap });
+      writeCard(cardId);
+      onConfirm({ mode, date, memberId, cardId, amounts: amountMap });
     }
   };
 
@@ -113,6 +123,20 @@ export default function PurchaseConfirm({ items, members = [], defaultMemberId =
               <span className="dot" style={{ background: memberColor(null) }} />{SHARED_LABEL}
             </button>
           </div>
+        </div>
+      )}
+      {cards.length > 0 && (
+        <div className="field">
+          <label>결제</label>
+          <div className="chips">
+            <button type="button" className="chip" aria-pressed={cardId === null} onClick={() => setCardId(null)}>💵 현금·기타</button>
+            {cards.map((c) => (
+              <button key={c.id} type="button" className="chip" aria-pressed={cardId === c.id} onClick={() => setCardId(c.id)}>
+                <span className="dot" style={{ background: colorVar(c.color) }} />{c.name}
+              </button>
+            ))}
+          </div>
+          {cardId && <p className="hint">일시불로 기록되고, 그 카드의 청구 예정에 잡혀요.</p>}
         </div>
       )}
       <div className="field">

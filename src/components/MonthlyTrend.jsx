@@ -26,7 +26,11 @@ export default function MonthlyTrend({ allTx, ym, onPick, label = '' }) {
   }, [allTx, ym, range]);
 
   const max = Math.max(1, ...months.map((m) => Math.max(m.inc, m.exp)));
-  const withData = months.filter((m) => m.inc || m.exp);
+  // 평균: 기록 있는 달로만. 아직 덜 끝난 이번 달은 다른 달이 있으면 뺌 (평균이 낮게 나오지 않게)
+  const nowKey = ymKey(new Date().getFullYear(), new Date().getMonth() + 1);
+  const dataMonths = months.filter((m) => m.inc || m.exp);
+  const skipCurrent = dataMonths.length > 1 && dataMonths.some((m) => ymKey(m.y, m.m) === nowKey);
+  const withData = skipCurrent ? dataMonths.filter((m) => ymKey(m.y, m.m) !== nowKey) : dataMonths;
   const avgExp = withData.length ? withData.reduce((a, m) => a + m.exp, 0) / withData.length : 0;
   const avgInc = withData.length ? withData.reduce((a, m) => a + m.inc, 0) / withData.length : 0;
   const totalNet = months.reduce((a, m) => a + m.inc - m.exp, 0);
@@ -84,6 +88,7 @@ export default function MonthlyTrend({ allTx, ym, onPick, label = '' }) {
           <div className="trend-legend">
             <span><i className="sw inc" />수입 · 평균 {won(avgInc)}</span>
             <span><i className="sw exp" />지출 · 평균 {won(avgExp)}</span>
+            {skipCurrent && <span className="hint">평균은 이번 달 제외</span>}
             <span className={totalNet >= 0 ? 'pos' : 'neg'}>{range}개월 {totalNet >= 0 ? '저축' : '적자'} {won(Math.abs(totalNet))}</span>
           </div>
         </>
