@@ -89,6 +89,9 @@ export function isValidRecurring(list) {
     if (!isYm(r.start) || !(r.end == null || isYm(r.end)) || !(r.last == null || isYm(r.last))) return false;
     if (typeof r.active !== 'boolean') return false;
     if (!(r.srcTx == null || isStr(r.srcTx, 64))) return false;
+    // 결제 카드·태그 (선택). 반복 내역은 일시불만
+    if (!(r.cardId == null || isStr(r.cardId, 64))) return false;
+    if (!(r.tags == null || isValidTags(r.tags))) return false;
     ids.add(r.id);
   }
   return true;
@@ -266,19 +269,25 @@ export const isVersioned = (op) => VERSIONED.has(op.kind) || isSetting(op.kind);
  * - 아니면 서버 상태의 버전. 내역·물품이 서버에 없으면 null(새로 추가), 설정 칸은 0(한 번도 안 바뀜)
  * - 서버 버전을 모르면(017 전, 아직 못 받음) 붙이지 않음 → 예전처럼 확인 없이 저장
  */
-export function withBase(op, queue, ver) {
+export function withBase(op, queue, ver, state) {
   if (!isVersioned(op) || op.base !== undefined) return op;
   const pending = queue.find((o) => sameTarget(o, op));
-  if (pending) return pending.base === undefined ? op : { ...op, base: pending.base };
+  // 설정 칸: 바꾸기 전에 본 값(prev)도 함께 → 충돌 나면 서로 다른 부분은 자동으로 합칠 수 있게 (merge.js)
+  if (pending) {
+    if (pending.base === undefined) return op;
+    return { ...op, base: pending.base, ...(pending.prev !== undefined ? { prev: pending.prev } : {}) };
+  }
   if (!ver) return op;
   const v = ver[targetKey(op)];
-  return { ...op, base: v ?? (isSetting(op.kind) ? 0 : null) };
+  const prev = isSetting(op.kind) && state && state[op.kind] !== undefined ? { prev: state[op.kind] } : {};
+  return { ...op, base: v ?? (isSetting(op.kind) ? 0 : null), ...prev };
 }
 
 /** 작업 하나가 서버에 올라간 뒤: 같은 대상의 남은 작업(보내는 사이에 또 고친 것)을 새 버전 기준으로 */
 export function rebase(queue, op, version) {
   if (version === undefined) return queue;
-  return queue.map((o) => (o.opId !== op.opId && sameTarget(o, op) && o.base === op.base ? { ...o, base: version } : o));
+  return queue.map((o) => (o.opId !== op.opId && sameTarget(o, op) && o.base === op.base
+    ? { ...o, base: version, ...(o.prev !== undefined && 'value' in op ? { prev: op.value } : {}) } : o));
 }
 
 /** 서버 상태의 버전 표 갱신 (version = null 이면 지움: 삭제됨) */

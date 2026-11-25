@@ -96,7 +96,7 @@ export default function FavoritesManager({ favorites, members, meId = null, onSa
     setEditing(null);
     onSave(next, exists ? `"${fav.label}" 즐겨찾기를 고쳤어요` : `"${fav.label}" 즐겨찾기를 만들었어요`);
   };
-  const del = (fav) => { setEditing(null); onSave(favorites.filter((x) => x.id !== fav.id), `"${fav.label}" 즐겨찾기를 지웠어요`); };
+  const del = (fav) => { setEditing(null); onSave(favorites.filter((x) => x.id !== fav.id), `"${fav.label}" 즐겨찾기를 지웠어요`, { item: fav, index: favorites.indexOf(fav) }); };
   const move = (id, d) => onSave(moveInGroup(favorites, id, d, members), '순서를 바꿨어요');
   const groups = groupFavorites(favorites, members, meId);
   const split = groups.length > 1;

@@ -64,6 +64,7 @@ describe('메모 속 링크', () => {
     for (let i = 0; i < await links.count(); i++) hrefs.push(await links.nth(i).getAttribute('href'));
     assert.deepEqual(hrefs, ['http://a.kr/x', 'https://b.com/']);
     await page.click('.sheet button[aria-label="닫기"]');
+    await page.click('.leave-ask button:has-text("닫기")'); // 입력하다 닫으면 한 번 물어봄
     await tab(page, '장보기');
     await page.click('.fab');
     await page.waitForSelector('#si-memo');

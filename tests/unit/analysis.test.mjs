@@ -45,6 +45,12 @@ const full = compareMonths(tx2, { y: 2026, m: 11 }, new Date('2026-12-20T12:00:0
 assert.equal(full.partial, false); assert.equal(full.prevTotal, 1039999); assert.equal(full.curTotal, 50000);
 // 3월 31일 기준 → 2월은 28일까지
 assert.equal(compareMonths([], { y: 2027, m: 3 }, new Date('2027-03-31T12:00:00')).cutoffDay, 31);
+// 2월 말일 → 1월도 31일까지 전부
+{
+  const jf = [T('2027-01-30', 70000, '식비'), T('2027-02-10', 10000, '식비')];
+  assert.equal(compareMonths(jf, { y: 2027, m: 2 }, new Date('2027-02-28T12:00:00')).prevTotal, 70000);
+  assert.equal(compareMonths(jf, { y: 2027, m: 2 }, new Date('2027-02-27T12:00:00')).prevTotal, 0);
+}
 
 // ---------- 연간 리포트 ----------
 const yr = [
@@ -63,6 +69,14 @@ assert.deepEqual(R.byTag.map((x) => [x.name, x.amount]), [['명절', 150000], ['
 assert.deepEqual(R.byMember.map((x) => [x.name, x.amount]), [['공동', 400000], ['엄마', 50000]]);
 assert.deepEqual(R.byCard.map((x) => [x.name, x.amount]), [['신한', 300000], ['현금·기타', 150000]]);
 assert.equal(R.count, 4);
+// 월평균: 기록 있는 달(1월·3월)로만, 12로 나누지 않음
+assert.deepEqual([R.avg.months, R.avg.exp, R.avg.inc], [2, 225000, 500000]);
+// 올해 이번 달(3월)은 덜 끝났으니 빼고
+const R2 = yearReport(yr, 2026, { today: new Date('2026-03-28T12:00:00') });
+assert.deepEqual([R2.avg.months, R2.avg.exp, R2.avg.excludesCurrent], [1, 100000, true]);
+// 기록이 이번 달뿐이면 그 달로
+const R3 = yearReport(yr.filter((t) => t.date >= '2026-03'), 2026, { today: new Date('2026-03-28T12:00:00') });
+assert.deepEqual([R3.avg.months, R3.avg.excludesCurrent], [1, false]);
 
 // ---------- 검색 ----------
 const S = searchTx(yr, { from: '2026-01-01', to: '2026-12-31', type: 'expense', tags: ['명절'] });
@@ -72,6 +86,8 @@ assert.equal(searchTx(yr, { card: 'c1' }).count, 1);
 assert.equal(searchTx(yr, { card: 'cash', type: 'expense' }).count, 3);
 assert.equal(searchTx(yr, { who: 'm1' }, [{ id: 'm1', name: '엄마' }]).count, 1);
 assert.equal(searchTx(yr, { q: '엄마' }, [{ id: 'm1', name: '엄마' }]).count, 1);   // 사람 이름으로도
+assert.equal(searchTx(yr, { q: '공동', type: 'expense' }, [{ id: 'm1', name: '엄마' }]).count, 3); // 공동도
+assert.equal(searchTx(yr, { q: '신한' }, [], [card]).count, 1);                       // 카드 이름으로도
 assert.equal(searchTx(yr, { q: '여행' }).count, 1);                                 // 태그로도
 assert.equal(searchTx(yr, { categories: ['식비', '쇼핑'], from: '2026-03-01' }).count, 2);
 assert.deepEqual(allTags(yr), ['명절', '여행']);

@@ -133,7 +133,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 009_report_schedule | 리포트 예약 (선택, 프로젝트ID·비밀 값을 채워서 실행) | 008, 함수 배포 |
 | 010_history_comments | `activity_log` 트리거, `tx_comments`, `dismissed_subs` | 008 |
 | 011_memo_200 | 메모 200자, 반복·즐겨찾기 설정 크기 한도 상향 (예전 설치마다 다른 제약 이름을 정의로 찾아 교체) | 008 |
-| 017_versions | 동시에 고칠 때 덮어쓰기 방지. `transactions`·`shopping_items.version`(트리거 `bump_version`: 내용이 바뀔 때만 +1, 앱이 못 바꿈, `rename_category` 안의 카테고리만 변경은 그대로), `settings.ver` 칸별 버전(트리거 `bump_settings_ver`), `save_setting(col, value, base)`(security invoker, 다르면 `LV409 version_conflict`). `log_activity`는 `version` 제외. 앱: 작업에 `base`(본 버전, `withBase`) → 내역·물품은 `insert`(base null)/`update…eq(version)`/`delete…eq(version)`, 설정은 `save_setting`. 0줄·23505·LV409면 서버 줄을 다시 읽어 내용이 같으면 성공(응답 유실), 다르면 충돌 → 작업을 빼고 다시 불러온 뒤 `onConflict`(App 알림 "내 것으로 저장"·"다시 살리기"·"그래도 지우기" → `retryConflict`). 자동 작업(반복 내역 기록)은 `soft`로 조용히 뺌. 버전 표는 서버 상태 `_ver`(캐시에도 보관). 017 전이면 예전처럼 upsert | 016 |
+| 017_versions | 동시에 고칠 때 덮어쓰기 방지. `transactions`·`shopping_items.version`(트리거 `bump_version`: 내용이 바뀔 때만 +1, 앱이 못 바꿈, `rename_category` 안의 카테고리만 변경은 그대로), `settings.ver` 칸별 버전(트리거 `bump_settings_ver`), `save_setting(col, value, base)`(security invoker, 다르면 `LV409 version_conflict`). `log_activity`는 `version` 제외. 앱: 작업에 `base`(본 버전, `withBase`) → 내역·물품은 `insert`(base null)/`update…eq(version)`/`delete…eq(version)`, 설정은 `save_setting`. 0줄·23505·LV409면 서버 줄을 다시 읽어 내용이 같으면 성공(응답 유실), 다르면 충돌 → 작업을 빼고 다시 불러온 뒤 `onConflict`(App 알림 "내 것으로 저장"·"다시 살리기"·"그래도 지우기" → `retryConflict`). 자동 작업(반복 내역 기록)은 `soft`로 조용히 뺌. 설정 칸 충돌은 `op.prev`(바꾸기 전 본 값)로 3방향 자동 합치기(`lib/merge.js`: id 목록은 항목·칸별, 문자열 목록은 집합, 객체는 키별) 후 성공하면 합친 값을 다시 `save_setting`. 버전 표는 서버 상태 `_ver`(캐시에도 보관). 017 전이면 예전처럼 upsert | 016 |
 | 016_delete_account | `delete_account()` 회원 탈퇴(security definer, `auth.users`에서 본인 삭제 → cascade). 내 가계부에 다른 참여자가 있으면 `ledger_has_members`로 거절. `tx_comments.author`는 cascade, `activity_log.actor`는 set null | 008 |
 | 015_recurring_100 | 반복 내역 최대 100개(가계부 하나당). 반복 내역 검사 제약을 정의로 찾아 교체. 015 전 DB에 51개 이상을 보내면 앱이 `recurring` 작업을 보관하고 015 안내(`recurBlockedRef`). 011도 100으로 맞춰 다시 실행해도 안전 | 011 |
 | 014_restore_backup | `restore_backup(p_tx, p_items, p_overwrite)` 백업 복원(security invoker, 1000건 한도, 앱은 300건씩). 가계부 ID는 항상 `current_ledger()`. 새로 넣는 줄은 `ledger.skip_log='restore'`로 기록 생략, 덮어쓰기(UPDATE)는 기록. 넣는 줄의 `device_id`는 비어 있어 푸시 함수가 알리지 않음 | 013 |
@@ -183,3 +183,13 @@ Supabase(PostgREST)는 한 번에 최대 1,000줄만 돌려주고 오류를 내�
 ## 9. 다음 후보 (사용자와 논의된 것)
 
 정산하기, 예산 초과 알림, 카드 결제일 알림, 장보기 리마인더, 연말정산 도우미, CSV 가져오기, 저축 목표, 앱 잠금(PIN), 다크 모드 직접 선택, 실제 Supabase 통합 점검, 코드 분할로 속도 개선.
+
+## 2026-11-24 추가
+- `hooks/useAppUpdate.js`: 서버 `/`(index.html)를 `x-update-check` 헤더로 받아 메인 빌드 파일(`/assets/...`) 이름을 지금 문서와 비교 → 다르면 `.update-bar`. 화면 복귀(5분 간격 제한)·30분마다·시작 1분 뒤. 개발 서버(빌드 파일 없음)에선 꺼짐
+- 장보기 결제: `PurchaseConfirm` 결제 카드 칩 → `planPurchase(opts.cardId)` → 내역 `cardId`, `inst: 1`. 마지막 카드 `localStorage['ledger.shopCard']`
+- 반복 규칙 선택 칸 `cardId`(지출만, 일시불)·`tags` (`isValidRecurring`). `planRecurring`이 내역에 넣음, `ruleFromTx`·`ruleFromSuggestion`이 이어감. DB 변경 없음(설정 jsonb)
+- 시트 입력 보호: `<Sheet guard>`(입력 양식 시트). 입력이 생긴 `form`을 기억 → 바깥·Esc·✕·뒤로 가기(`sheetGuard.blocked`, App popstate)면 `.leave-ask` 확인. submit하면 그 양식은 빠지고, 취소로 양식이 사라지면(isConnected) 입력 중 아님
+- 목록 설정 삭제 되돌리기: `onSave(list, msg, { item, index })` → App `withUndo(kind)`가 알림에 되돌리기(최신 목록의 원래 자리에 다시 넣음). 반복 내역·즐겨찾기
+- 예산 카드 `planned`: `upcomingThisMonth(rules, today)`(이번 달 남은 날의 활성 반복 지출) 합계를 미리 뺌. 카테고리별 예산은 카테고리별 합계
+- '공동' 묶음 즐겨찾기(사람 없음·지운 사람)는 공동(null)으로 기록. 장보기 빠른 추가는 같은 이름(normalizeName)의 살 것이 있으면 수량 +1
+

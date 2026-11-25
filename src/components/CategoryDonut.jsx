@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { colorOf, useCategories } from '../lib/categories';
 import { won } from '../lib/format';
+import { sharePercents } from '../lib/members';
 
 const R = 52;
 const C = 2 * Math.PI * R;
@@ -23,11 +24,13 @@ export default function CategoryDonut({ expenses, total }) {
     return (
       <div className="card">
         <h2>카테고리별 지출</h2>
-        <div className="empty-mini">이번 달 지출이 아직 없어요.</div>
+        <div className="empty-mini">이 달 지출이 아직 없어요.</div>
       </div>
     );
   }
 
+  // 비율 합이 99%·101%가 되지 않게 (사람별 합계와 같은 방식)
+  const pcs = sharePercents(rows.map(([, v]) => v), total);
   let offset = 0;
   const gap = rows.length > 1 ? 2 : 0;
 
@@ -52,10 +55,10 @@ export default function CategoryDonut({ expenses, total }) {
           <div className="center"><div>최다<b>{rows[0][0]}</b></div></div>
         </div>
         <ul className="legend">
-          {rows.map(([cat, v]) => (
+          {rows.map(([cat, v], i) => (
             <li key={cat}>
               <span className="sw" style={{ background: color(cat) }} />
-              <span className="nm">{cat} <span className="pc">{Math.round((v / total) * 100)}%</span></span>
+              <span className="nm">{cat} <span className="pc">{pcs[i]}%</span></span>
               <span className="num" style={{ fontSize: 12.5 }}>{won(v)}</span>
             </li>
           ))}

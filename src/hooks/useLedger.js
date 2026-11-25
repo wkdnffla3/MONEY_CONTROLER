@@ -10,6 +10,7 @@ import { useOnline } from './useOnline';
 import { getDeviceId, isOwn, markOwn } from '../lib/device';
 import { isMissingFn } from '../lib/household';
 import { fetchAll } from '../lib/fetchAll';
+import { canMerge, mergeSetting } from '../lib/merge';
 
 export { newId };
 
@@ -141,6 +142,9 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
   onConflictRef.current = onConflict;
   const verRef = useRef(null);         // 017(버전 칸) 있는지: null 모름, true/false
   const saveFnRef = useRef(true);      // 017 save_setting 함수 있는지
+  // 내가 올린 저장의 버전 이동 기록 { 대상: [[보낸 base, 새 버전], ...] } — 내 저장끼리 충돌로 보지 않게
+  // (수정 창을 연 순간엔 앞 저장이 아직 안 올라가 옛 버전을 봤어도, 그 사이 올라간 게 내 것이면 이어서 계산)
+  const ownMoves = useRef(new Map());
   const deviceColRef = useRef(true); // device_id 칸이 있는지 (없으면 빼고 보냄)
   const renameFnRef = useRef(true);     // 013(rename_category 함수) 있는지. 없다고 확인되면 false
   const recurBlockedRef = useRef(false); // 반복 내역 51개 이상이 015 전 DB(50개 제한)에 걸려 보관 중인지
@@ -352,7 +356,17 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
           const f = await withTimeout(Promise.resolve(supabase.from('settings').select(`${col},ver`).maybeSingle()), SEND_TIMEOUT_MS);
           if (f.error) return f;
           const cur = op.kind === 'budget' ? Number(f.data?.[col]) || 0 : f.data?.[col];
-          if (sameValue(cur, op.value)) return { error: null, version: Number(f.data?.ver?.[col]) || 0 };
+          const curVer = Number(f.data?.ver?.[col]) || 0;
+          if (sameValue(cur, op.value)) return { error: null, version: curVer };
+          // 서로 다른 항목을 바꿨으면 자동으로 합쳐서 다시 저장 (예: 두 기기에서 즐겨찾기를 하나씩 추가)
+          if (canMerge(op.kind) && op.prev !== undefined) {
+            const m = mergeSetting(op.kind, sanitizeSetting(op.kind, op.prev), op.value, sanitizeSetting(op.kind, cur));
+            if (m.ok && SETTINGS[op.kind].valid(m.value)) {
+              const r2 = await withTimeout(Promise.resolve(supabase.rpc('save_setting', { p_col: col, p_value: m.value, p_base: curVer })), SEND_TIMEOUT_MS);
+              if (!r2.error) return { error: null, version: Number(r2.data) || 0, value: m.value };
+              if (!isVersionConflict(r2.error)) return r2;
+            }
+          }
           return { conflict: 'changed' };
         } else return r;
       }
@@ -427,6 +441,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
           continue;
         }
         const { error: e, version } = res;
+        const applied = res.value !== undefined ? { ...op, value: res.value } : op; // 자동으로 합쳐 저장한 값
         if (e) {
           // device_id 칸만 없는 거면(007 전) 그 칸을 빼고 바로 다시 보냄 — 알림만 덜 정확해질 뿐 저장엔 문제없음
           if (isDeviceColError(e) && deviceColRef.current) { deviceColRef.current = false; continue; }
@@ -465,10 +480,14 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
           droppedAny = true;
           continue;
         }
-        setQ(rebase(removeOp(getQ(), op.opId), op, version));
-        updateServer(setVer(applyQueue(serverRef.current, [op]), op, version));
+        if (version !== undefined && op.base !== undefined) {
+          const k = verKey(op);
+          ownMoves.current.set(k, [...(ownMoves.current.get(k) || []), [op.base, version]].slice(-10));
+        }
+        setQ(rebase(removeOp(getQ(), op.opId), applied, version));
+        updateServer(setVer(applyQueue(serverRef.current, [applied]), op, version));
         const now = Date.now();
-        sentLog.current = [...sentLog.current.filter((x) => now - x.at < 60000), { at: now, op, version }];
+        sentLog.current = [...sentLog.current.filter((x) => now - x.at < 60000), { at: now, op: applied, version }];
       }
       if (skipped.size) {
         scheduleRetry(() => flushRef.current()); // DB가 업데이트되면 다음 시도에 올라감
@@ -612,7 +631,14 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
   /** 작업을 목록에 넣고 전송을 시도. 결과: { synced } — 서버까지 올라갔으면 true */
   const enqueue = useCallback(async (op0) => {
     const q0 = getQ();
-    const op = withBase(op0, q0, serverRef.current._ver);
+    // 창을 열 때 본 버전(base)이 그 뒤 내 저장으로 바뀌었으면 따라감
+    if (op0.base !== undefined) {
+      const moves = ownMoves.current.get(verKey(op0)) || [];
+      let b = op0.base;
+      for (let i = 0; i < 10; i++) { const m = moves.find(([from]) => from === b); if (!m) break; b = m[1]; }
+      if (b !== op0.base) op0 = { ...op0, base: b };
+    }
+    const op = withBase(op0, q0, serverRef.current._ver, serverRef.current);
     if (op.kind === 'upsert' || op.kind === 'item') markOwn([op.id]);
     setQ(coalesce(q0, op));
     await flush();
@@ -631,7 +657,7 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
     }
     markOwn(ops.filter((o) => o.kind === 'upsert' || o.kind === 'item').map((o) => o.id));
     let q = getQ();
-    for (const op of ops) q = coalesce(q, withBase(op, q, serverRef.current._ver));
+    for (const op of ops) q = coalesce(q, withBase(op, q, serverRef.current._ver, serverRef.current));
     setQ(q);
     await flush();
     const errs = ops.map((o) => failed.current.get(o.opId)).filter(Boolean);
@@ -789,7 +815,11 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
     const plan = planRecurring(viewRef.current.recurring, new Date());
     if (!plan.changed) return;
     // soft: 다른 기기가 먼저 기록·수정했으면(017 충돌) 조용히 빼고, 최신 내용을 받은 뒤 다시 판단
-    const ops = plan.txs.map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data, soft: true }));
+    // 같은 규칙의 다른 달 내역을 사용자가 이 달로 옮겨 둔 경우(날짜 수정)는 이 달 몫이 이미 있는 것으로 봄 → 한 달에 두 번 X
+    const txs = Object.entries(viewRef.current.tx);
+    const already = ({ id, data }) => txs.some(([tid, t]) => tid !== id && tid.length === id.length
+      && tid.startsWith(id.slice(0, -7)) && t.date?.slice(0, 7) === data.date.slice(0, 7));
+    const ops = plan.txs.filter((x) => !already(x)).map(({ id, data }) => ({ opId: newId(), kind: 'upsert', id, data, soft: true }));
     ops.push({ opId: newId(), kind: 'recurring', value: plan.rules, soft: true });
     enqueueMany(ops).catch(() => {});
   }, [userId, serverLoaded, loadedDay, recurringKey, today, enqueueMany]);

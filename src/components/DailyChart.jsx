@@ -18,8 +18,9 @@ export default function DailyChart({ list, ym, half = false }) {
   }, [list, days]);
 
   const max = Math.max(...perDay, 1);
-  const total = perDay.reduce((a, b) => a + b, 0);
   const elapsed = current ? new Date().getDate() : days;
+  // 하루 평균: 이번 달이면 오늘까지 쓴 것만 (앞날짜로 미리 넣은 내역은 지난 날 평균에 넣지 않음)
+  const total = perDay.slice(0, elapsed).reduce((a, b) => a + b, 0);
 
   // 툴팁은 리렌더 없이 DOM을 직접 움직임
   const onMove = (e) => {

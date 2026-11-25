@@ -15,6 +15,25 @@ const seed = seedScript({ settingsRow: settings({ members, favorites }) });
 const asJunho = "localStorage.setItem('ledger.me.u1','m2')"; // 이 기기를 쓰는 사람 = 준호
 
 describe('즐겨찾기 사람별 보기', () => {
+  test("'공동' 묶음 즐겨찾기 → 공동으로 기록 (바로 저장·입력창 모두), 사람 묶음은 그 사람", async () => {
+    const f2 = [fav('a0', '민지점심', 'm1'), fav('s2', '공동관리비', null), fav('s1', '공동장보기', null, 0), fav('g1', '지운사람', 'gone')];
+    const { ctx, page, errs } = await open(env, { seed: seedScript({ settingsRow: settings({ members, favorites: f2 }) }), init: [asJunho] });
+    const bar = page.locator('.fav-bar');
+    await bar.locator('button:has-text("공동관리비")').click();
+    await page.waitForTimeout(600);
+    await bar.locator('button:has-text("지운사람")').click();
+    await page.waitForTimeout(600);
+    await bar.locator('button:has-text("민지점심")').click();
+    await page.waitForTimeout(600);
+    const d = (await db(page)).transactions;
+    assert.deepEqual(d.map((t) => t.member_id).sort(), [null, null, 'm1'].sort());
+    await bar.locator('button:has-text("공동장보기")').click(); // 금액 없음 → 입력창
+    await page.waitForSelector('.sheet');
+    assert.equal(await page.locator('.sheet .chip[aria-pressed="true"]:has-text("공동")').count(), 1);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
   test('나(준호) 묶음 먼저, 묶음 이름·개수, 탭으로 한 사람만', async () => {
     const { ctx, page, errs } = await open(env, { seed, init: [asJunho] });
     const bar = page.locator('.fav-bar');

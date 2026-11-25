@@ -158,3 +158,35 @@ test('수정 창을 열어 둔 사이 다른 기기가 고치고 이 기기가 �
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+
+describe('설정 자동 합치기', () => {
+  test('두 기기에서 즐겨찾기를 하나씩 추가 → 알림 없이 둘 다 저장', async () => {
+    const { ctx, page, errs } = await open(env, { seed, path: '#list' });
+    await other(page, "d.settings[0].favorites = [{ id: 'fo', label: '다른기기', type: 'expense', amount: 500, category: '교통', memo: '', memberId: null, cardId: null, tags: [] }]; d.settings[0].ver = { favorites: 1 };");
+    await openTx(page, '점심');
+    await page.click('.sheet .fav-add-btn');
+    await page.waitForTimeout(1000);
+    const favs = (await db(page)).settings[0].favorites;
+    assert.equal(favs.length, 2);
+    assert.ok(favs.some((x) => x.id === 'fo'));
+    assert.doesNotMatch(await page.innerText('.toast'), /다른 기기/);
+    assert.equal((await pending(page)).length, 0);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
+  test('같은 반복 내역을 다른 기기는 기록(last), 이 기기는 금액 수정 → 칸별로 합침', async () => {
+    const rule = { id: 'r1', type: 'expense', amount: 55000, category: '식비', memo: '통신비', memberId: null, day: 28, start: '2026-01', end: null, last: '2026-10', active: true };
+    const { ctx, page, errs } = await open(env, { seed: seedScript({ settingsRow: settings({ recurring: [rule] }) }) });
+    await other(page, "d.settings[0].recurring = [{ ...d.settings[0].recurring[0], last: '2026-11', memo: '통신비' }]; d.settings[0].ver = { recurring: 1 };");
+    await menu(page, '반복 내역');
+    await page.click('.sheet .rule-list li:has-text("통신비") button:has-text("수정")');
+    await page.fill('.sheet .amount-input input', '61000');
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(1000);
+    const r = (await db(page)).settings[0].recurring[0];
+    assert.deepEqual([r.amount, r.last], [61000, '2026-11']);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+});
