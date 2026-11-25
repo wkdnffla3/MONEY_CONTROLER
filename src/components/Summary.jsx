@@ -3,16 +3,17 @@ import { signedWon, won } from '../lib/format';
 // 8자리(천만 원) 이상이면 좁은 화면에서 글자를 줄임 (잔액 칸은 넓어서 13자 이상부터)
 const long = (n, len = 10) => won(Math.abs(n)).length >= len;
 
-export default function Summary({ inc, exp, cmp, who = '' }) {
+// monthLabel: 보고 있는 달 ('이번 달' 또는 '10월') — 다른 달을 볼 때 '이번 달 잔액'으로 잘못 보이지 않게
+export default function Summary({ inc, exp, cmp, who = '', monthLabel = '이번 달' }) {
   const balance = inc - exp;
   const rate = inc > 0
     ? `저축률 ${Math.max(-999, Math.round((balance / inc) * 100))}%`
     : '수입을 기록하면 저축률이 보여요';
 
   return (
-    <section className="summary" aria-label="이번 달 요약">
+    <section className="summary" aria-label={`${monthLabel} 요약`}>
       <div className="stat bal">
-        <div className="k">{who ? `${who} · 이번 달 잔액` : '이번 달 잔액'}</div>
+        <div className="k">{who ? `${who} · ${monthLabel} 잔액` : `${monthLabel} 잔액`}</div>
         <div className={`v num${long(balance, 13) ? ' long' : ''}`}>{signedWon(balance)}</div>
         <div className="delta">{rate}</div>
       </div>

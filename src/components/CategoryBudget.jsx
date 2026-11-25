@@ -13,11 +13,12 @@ export function spentByCategory(list) {
 }
 
 /** 카테고리별 예산 카드 (모두의 지출 기준) */
-export function CategoryBudgetCard({ catBudgets, monthTx, onEdit }) {
+// planned: { 카테고리: 이번 달 남은 날에 자동으로 기록될 반복 지출 } (보고 있는 달이 이번 달일 때만)
+export function CategoryBudgetCard({ catBudgets, monthTx, onEdit, planned = {} }) {
   const cats = useCategories();
   const spent = useMemo(() => spentByCategory(monthTx), [monthTx]);
   const rows = Object.entries(catBudgets)
-    .map(([name, budget]) => ({ name, budget, spent: spent[name] || 0 }))
+    .map(([name, budget]) => ({ name, budget, spent: spent[name] || 0, planned: planned[name] || 0 }))
     .map((r) => ({ ...r, ratio: r.spent / r.budget }))
     .sort((a, b) => b.ratio - a.ratio);
 
@@ -41,7 +42,9 @@ export function CategoryBudgetCard({ catBudgets, monthTx, onEdit }) {
                 </div>
                 <div className={`bar ${level}`}><span style={{ width: `${Math.min(100, r.ratio * 100)}%` }} /></div>
                 <div className="foot">
-                  {r.ratio > 1 ? `${won(r.spent - r.budget)} 넘었어요` : `${won(r.budget - r.spent)} 남음`}
+                  {r.ratio > 1 ? `${won(r.spent - r.budget)} 넘었어요`
+                    : r.planned && r.spent + r.planned > r.budget ? `곧 기록될 반복 ${won(r.planned)}까지 더하면 ${won(r.spent + r.planned - r.budget)} 넘어요`
+                      : `${won(r.budget - r.spent - r.planned)} 남음${r.planned ? ` (반복 ${won(r.planned)} 빼고)` : ''}`}
                   <span className="num">{Math.round(r.ratio * 100)}%</span>
                 </div>
               </li>
@@ -77,7 +80,7 @@ export function CategoryBudgetForm({ catBudgets, monthTx, onSave }) {
 
   return (
     <form className="form" onSubmit={submit} noValidate>
-      <p className="hint">비워 두면 그 카테고리는 예산 없이 봐요. 옆의 숫자는 이번 달 지금까지 쓴 금액이에요.</p>
+      <p className="hint">비워 두면 그 카테고리는 예산 없이 봐요. 옆의 숫자는 보고 있는 달에 쓴 금액이에요.</p>
       <ul className="catbud-edit">
         {cats.expense.map((c) => (
           <li key={c.name}>

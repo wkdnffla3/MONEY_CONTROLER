@@ -41,7 +41,7 @@ export default function AdvancedSearch({ allTx, members, cards, tags, filters, o
   const [min, max] = a1 && a2 && a1 > a2 ? [a2, a1] : [a1, a2];
   const result = useMemo(() => searchTx(allTx, {
     from, to, type: f.type, categories: f.categories, who: f.who, tags: f.tags, card: f.card, min, max, q: f.q,
-  }, members), [allTx, members, from, to, min, max, f]);
+  }, members, cards), [allTx, members, cards, from, to, min, max, f]);
 
   const catList = f.type === 'income' ? cats.income : f.type === 'expense' ? cats.expense
     : [...cats.expense, ...cats.income.filter((c) => !cats.expense.some((e) => e.name === c.name))];

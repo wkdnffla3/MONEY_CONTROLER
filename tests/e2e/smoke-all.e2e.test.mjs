@@ -20,6 +20,13 @@ const seed = seedScript({
     recurring: [{ id: 'r1', type: 'expense', amount: 55000, category: '없어진카테고리', memo: '통신', memberId: 'gone', day: 31, start: '2026-01', end: null, last: ym, active: false }],
   }),
 });
+// 입력하다 만 시트는 Esc 후 "닫기"를 한 번 더 (입력 보호)
+const closeSheet = async (page) => {
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  if (await page.locator('.leave-ask').count()) await page.click('.leave-ask button:has-text("닫기")');
+  await page.waitForTimeout(150);
+};
 const ITEMS = ['가계부 공유', '즐겨찾기', '변경 기록', '반복 내역', '카테고리 편집', '카테고리별 예산', '신용카드', '상세 검색', '알림', '월 예산', '함께 쓰는 사람', '백업·복원', 'CSV 내보내기', '계정·개인정보'];
 
 for (const width of [320, 360, 1280]) {
@@ -50,7 +57,7 @@ for (const width of [320, 360, 1280]) {
     await page.waitForSelector('.sheet');
     await page.selectOption('.sheet select[id$="-inst"]', '6').catch(() => {});
     await sheetFits('수정 시트');
-    await page.keyboard.press('Escape');
+    await closeSheet(page);
     await page.waitForTimeout(250);
     if (await page.locator('.fab').isVisible()) {
       await page.click('.fab');
@@ -58,7 +65,7 @@ for (const width of [320, 360, 1280]) {
       await page.fill('.sheet .amount-input input', '9999999999');
       await page.click('.sheet .repeat-toggle');
       await sheetFits('새 내역 시트');
-      await page.keyboard.press('Escape');
+      await closeSheet(page);
       await page.waitForTimeout(250);
     }
     await tab(page, '장보기');
@@ -67,7 +74,7 @@ for (const width of [320, 360, 1280]) {
     await page.waitForTimeout(300);
     await overflow('장보기 추가 후');
     await page.click('.shop-row >> nth=0').catch(() => {});
-    if (await page.locator('.sheet').count()) { await sheetFits('물품 시트'); await page.keyboard.press('Escape'); await page.waitForTimeout(250); }
+    if (await page.locator('.sheet').count()) { await sheetFits('물품 시트'); await closeSheet(page); await page.waitForTimeout(250); }
     for (const name of ITEMS) {
       await menu(page, name);
       await page.waitForTimeout(250);
@@ -75,7 +82,7 @@ for (const width of [320, 360, 1280]) {
       if (process.env.DBG) console.log(name, JSON.stringify(await page.evaluate(() => { const S = document.querySelector('.sheet'); if (!S) return []; const R = S.getBoundingClientRect().right; return [...S.querySelectorAll('*')].filter((e) => e.getBoundingClientRect().right > R + 1 && ![...e.children].some((c) => c.getBoundingClientRect().right > R + 1)).slice(0, 8).map((e) => `${e.tagName}.${e.className} r=${Math.round(e.getBoundingClientRect().right)}/${Math.round(R)}`); })));
       const sheetOverflow = await page.evaluate(() => { const s = document.querySelector('.sheet'); return s ? s.scrollWidth - s.clientWidth : 0; });
       assert.ok(sheetOverflow <= 1, `설정 ${name}: 시트 안 가로 넘침 ${sheetOverflow}px`);
-      await page.keyboard.press('Escape');
+      await closeSheet(page);
       await page.waitForTimeout(250);
     }
     assert.deepEqual(errs, []);

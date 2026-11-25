@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
-import { SHARED_LABEL, findMember, memberColor } from '../lib/members';
+import { SHARED_LABEL, colorVar, findMember, memberColor } from '../lib/members';
 import { newId, MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
 import { MAX_RECURRING, nextDate, occurrenceDate, resumeRule, ymOf } from '../lib/recurring';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
+import { useFormData } from '../lib/formData';
+import TagInput from './TagInput';
 
 const MAX_RULES = MAX_RECURRING;
 const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
@@ -17,8 +19,10 @@ const fmtDate = (s) => { const [, m, d] = s.split('-').map(Number); return `${m}
 export default function RecurringManager({ rules, members, onSave }) {
   const [editing, setEditing] = useState(null); // null | 'new' | rule id
   const cats = useCategories();
+  const { cards } = useFormData();
+  const cardName = (id) => cards.find((c) => c.id === id)?.name || '삭제된 카드';
   const list = rules;
-  const save = (next, msg) => onSave(next, msg);
+  const save = (next, msg, removed) => onSave(next, msg, removed);
 
   const upsertRule = (r) => {
     const exists = list.some((x) => x.id === r.id);
@@ -53,7 +57,7 @@ export default function RecurringManager({ rules, members, onSave }) {
                     )}
                   </div>
                   <div className="memo">
-                    매달 {dayLabel(r.day)} · {r.category}
+                    매달 {dayLabel(r.day)} · {r.category}{r.cardId ? ` · 💳 ${cardName(r.cardId)}` : ''}{r.tags?.length ? ` · ${r.tags.map((t) => `#${t}`).join(' ')}` : ''}
                     {r.active ? (next ? ` · 다음 ${fmtDate(next)}` : ' · 종료됨') : ' · 일시정지'}
                   </div>
                 </div>
@@ -63,7 +67,7 @@ export default function RecurringManager({ rules, members, onSave }) {
                     {r.active ? '일시정지' : '다시 시작'}
                   </button>
                   <button type="button" className="linkbtn" onClick={() => setEditing(r.id)}>수정</button>
-                  <button type="button" className="linkbtn danger-text" onClick={() => save(list.filter((x) => x.id !== r.id), '반복 내역을 삭제했어요')}>삭제</button>
+                  <button type="button" className="linkbtn danger-text" onClick={() => save(list.filter((x) => x.id !== r.id), '반복 내역을 삭제했어요', { item: r, index: list.indexOf(r) })}>삭제</button>
                 </div>
               </li>
             );
@@ -91,6 +95,9 @@ function RuleForm({ rule, members, onCancel, onDone }) {
   const [start, setStart] = useState(rule?.start || thisYm);
   const [end, setEnd] = useState(rule?.end || '');
   const [error, setError] = useState('');
+  const { cards, tags: tagSuggestions } = useFormData();
+  const [cardId, setCardId] = useState(rule?.cardId && cards.some((c) => c.id === rule.cardId) ? rule.cardId : null);
+  const [tags, setTags] = useState(Array.isArray(rule?.tags) ? rule.tags : []);
 
   const list = cats[type];
   const activeCat = list.some((c) => c.name === category) ? category : list[0].name;
@@ -119,6 +126,8 @@ function RuleForm({ rule, members, onCancel, onDone }) {
       last: rule?.last ?? null, // 이미 등록한 달은 유지 → 수정해도 지난 달이 다시 생기지 않음
       active: rule?.active ?? true,
       ...(rule?.srcTx ? { srcTx: rule.srcTx } : {}), // 내역에서 반복으로 바꾼 경우 그 내역과의 연결 유지
+      ...(type === 'expense' && cardId && cards.some((c) => c.id === cardId) ? { cardId } : {}), // 결제 카드 (일시불)
+      ...(tags.length ? { tags } : {}),
     });
   };
 
@@ -166,6 +175,24 @@ function RuleForm({ rule, members, onCancel, onDone }) {
           </div>
         </div>
       )}
+      {type === 'expense' && cards.length > 0 && (
+        <div className="field">
+          <label>결제</label>
+          <div className="chips">
+            <button type="button" className="chip" aria-pressed={cardId === null} onClick={() => setCardId(null)}>💵 현금·기타</button>
+            {cards.map((c) => (
+              <button key={c.id} type="button" className="chip" aria-pressed={cardId === c.id} onClick={() => setCardId(c.id)}>
+                <span className="dot" style={{ background: colorVar(c.color) }} />{c.name}
+              </button>
+            ))}
+          </div>
+          {cardId && <p className="hint">일시불로 기록되고, 그 카드의 청구 예정에 잡혀요.</p>}
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor="rr-tags">태그</label>
+        <TagInput id="rr-tags" value={tags} onChange={setTags} suggestions={tagSuggestions} />
+      </div>
       <div className="row2">
         <div className="field">
           <label htmlFor="rr-day">매달</label>

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { planRecurring, dueMonths, occurrenceDate, recurringTxId, nextDate, ruleFromTx, backfillCount, resumeRule, ruleOfTx, repeatMarker } from '../../src/lib/recurring.js';
 import { csvCell, toCsv } from '../../src/lib/csv.js';
 import { planPurchase, summarize as shopSummary, defaultMemo, groupHistory, isShoppingTxId } from '../../src/lib/shopping.js';
-import { isValidItem, sameTarget, isValidRecurring, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../../src/lib/outbox.js';
+import { isValidItem, sameTarget, isValidRecurring, isValidTx, isValidCategories, isValidCatBudgets, isValidOp, coalesce, applyQueue, EMPTY_STATE } from '../../src/lib/outbox.js';
 
 const D = (s) => new Date(`${s}T12:00:00`);
 const rule = (o = {}) => ({ id: 'r1', type: 'expense', amount: 500000, category: '주거·통신', memo: '월세', memberId: null,
@@ -110,7 +110,7 @@ assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' })
 {
   const d = { type: 'expense', amount: 55000, category: '주거·통신', memo: '통신비', date: '2026-11-18', memberId: 'm1', tags: ['고정'], cardId: 'c1', inst: 1 };
   const r = ruleFromTx(d, 'abc');
-  assert.deepEqual(r, { id: 'abc', type: 'expense', amount: 55000, category: '주거·통신', memo: '통신비', memberId: 'm1', day: 18, start: '2026-11', end: null, last: '2026-11', active: true });
+  assert.deepEqual(r, { id: 'abc', type: 'expense', amount: 55000, category: '주거·통신', memo: '통신비', memberId: 'm1', day: 18, start: '2026-11', end: null, last: '2026-11', active: true, cardId: 'c1', tags: ['고정'] }); // 카드·태그도 이어감 (2026-11-24)
   assert.ok(isValidRecurring([r]));
   const nov = new Date(2026, 10, 30);
   assert.equal(planRecurring([r], nov).changed, false); // 같은 달은 다시 안 만듦
@@ -169,4 +169,36 @@ assert.equal(sameTarget({ kind: 'item', id: 'z' }, { kind: 'itemDel', id: 'z' })
   assert.equal(leftLedger(U, null, { ledgerId: S }), null);
   assert.equal(leftLedger(U, { ledgerId: S }, { ledgerId: T }), S);
 }
+// 반복 내역 카드·태그 (2026-11-24)
+{
+  const rule = { id: 'c1', type: 'expense', amount: 17000, category: '문화·여가', memo: '넷플릭스', memberId: null, day: 10, start: '2026-10', end: null, last: '2026-10', active: true, cardId: 'k1', tags: ['구독'] };
+  assert.ok(isValidRecurring([rule]));
+  assert.equal(isValidRecurring([{ ...rule, tags: ['a', 'a'] }]), false);
+  assert.equal(isValidRecurring([{ ...rule, cardId: 5 }]), false);
+  const p = planRecurring([rule], new Date(2026, 10, 18));
+  assert.deepEqual([p.txs[0].data.cardId, p.txs[0].data.tags, p.txs[0].data.inst], ['k1', ['구독'], 1]);
+  assert.ok(isValidTx(p.txs[0].data));
+  // 수입이면 카드 없음, 예전 규칙(카드·태그 없음)도 그대로
+  const inc = planRecurring([{ ...rule, type: 'income' }], new Date(2026, 10, 18)).txs[0].data;
+  assert.equal(inc.cardId, null);
+  const old = planRecurring([{ ...rule, cardId: undefined, tags: undefined }], new Date(2026, 10, 18)).txs[0].data;
+  assert.deepEqual([old.cardId, old.tags], [null, []]);
+  // 내역 → 규칙: 카드·태그 이어감
+  const r2 = ruleFromTx({ type: 'expense', amount: 1, category: '식비', memo: '', date: '2026-11-03', cardId: 'k1', tags: ['x'] }, 'z');
+  assert.deepEqual([r2.cardId, r2.tags], ['k1', ['x']]);
+  const r3 = ruleFromTx({ type: 'expense', amount: 1, category: '식비', memo: '', date: '2026-11-03', cardId: null, tags: [] }, 'z');
+  assert.equal('cardId' in r3 || 'tags' in r3, false);
+}
 console.log('feature unit tests: all passed');
+// 예산: 이번 달 남은 날에 기록될 반복 지출
+{
+  const { upcomingThisMonth } = await import('../../src/lib/recurring.js');
+  const r = (id, o) => ({ id, type: 'expense', amount: 1000, category: '식비', memo: '', memberId: null, day: 25, start: '2026-01', end: null, last: '2026-10', active: true, ...o });
+  const today = new Date(2026, 10, 18);
+  const up = upcomingThisMonth([
+    r('a'), r('b', { day: 10 }), r('c', { last: '2026-11' }), r('d', { active: false }), r('e', { type: 'income' }),
+    r('f', { start: '2026-12' }), r('g', { end: '2026-10' }), r('h', { day: 31 }),
+  ], today);
+  assert.deepEqual(up.map((x) => [x.rule.id, x.date]), [['a', '2026-11-25'], ['h', '2026-11-30']]);
+}
+console.log('upcoming ok');

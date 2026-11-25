@@ -309,3 +309,18 @@ test('자정이 지나면(다른 기기 기록 없음) 서버를 받은 뒤 이�
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+
+test('이번 달 자동 기록을 다음 달 날짜로 옮겨 두면, 다음 달에 한 번 더 생기지 않음', async () => {
+  const rule = { id: 'r1', type: 'expense', amount: 55000, category: '식비', memo: '통신비', memberId: null, day: 5, start: '2026-10', end: null, last: '2026-11', active: true };
+  const moved = { id: 'rec-r1-2026-11', user_id: 'u1', type: 'expense', amount: 55000, category: '식비', memo: '통신비', date: '2026-12-02', member_id: null, tags: [], card_id: null, inst_months: 1, created_at: 1 };
+  const { ctx, page, errs } = await open(env, {
+    seed: seedScript({ transactions: [moved], settingsRow: settings({ recurring: [rule] }) }), path: '#list', contextOptions: KST,
+    beforeGoto: (p) => p.clock.install({ time: new Date('2026-12-08T10:00:00+09:00') }),
+  });
+  await page.waitForTimeout(1200);
+  const d = await db(page);
+  assert.equal(d.transactions.filter((x) => x.date.startsWith('2026-12')).length, 1);
+  assert.equal(d.settings[0].recurring[0].last, '2026-12'); // 규칙은 12월까지 처리한 것으로
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});

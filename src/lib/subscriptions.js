@@ -58,6 +58,8 @@ export function detectSubscriptions(allTx, recurring = [], dismissed = [], today
       key, type: latest.type, amount: latest.amount, category: latest.category, memo: latest.memo || '',
       memberId: latest.memberId ?? null, day: days[0], months: run.length, label: latest.memo || latest.category,
       lastYm: latest.date.slice(0, 7), // 마지막으로 결제된 달 (이번 달 또는 지난달)
+      cardId: latest.type === 'expense' && latest.inst <= 1 ? latest.cardId ?? null : null, // 마지막 결제 카드
+      tags: Array.isArray(latest.tags) ? latest.tags : [],
     };
     if (coveredBy(s, recurring)) continue;
     out.push(s);
@@ -75,5 +77,6 @@ export function ruleFromSuggestion(s, id, today = new Date()) {
   return {
     id, type: s.type, amount: s.amount, category: s.category, memo: s.memo.slice(0, MAX_MEMO), memberId: s.memberId ?? null,
     day: Math.min(31, Math.max(1, s.day)), start: last, end: null, last, active: true,
+    ...(s.cardId ? { cardId: s.cardId } : {}), ...(s.tags?.length ? { tags: [...s.tags] } : {}),
   };
 }

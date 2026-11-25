@@ -17,7 +17,9 @@ export function compareMonths(allTx, ym, today = new Date()) {
   const p = prevMonth(ym);
   const isCurrent = today.getFullYear() === ym.y && today.getMonth() + 1 === ym.m;
   const cutoffCur = isCurrent ? today.getDate() : daysInMonth(ym.y, ym.m);
-  const cutoffPrev = isCurrent ? Math.min(today.getDate(), daysInMonth(p.y, p.m)) : daysInMonth(p.y, p.m);
+  // 이번 달 말일이면 지난달도 끝까지 (2월 28일에 1월 29~31일이 빠지지 않게)
+  const lastDay = isCurrent && today.getDate() === daysInMonth(ym.y, ym.m);
+  const cutoffPrev = isCurrent && !lastDay ? Math.min(today.getDate(), daysInMonth(p.y, p.m)) : daysInMonth(p.y, p.m);
   const kCur = ymKey(ym.y, ym.m), kPrev = ymKey(p.y, p.m);
   const day = (t) => Number(t.date.slice(8, 10));
   const cur = allTx.filter((t) => t.type !== 'income' && t.date?.startsWith(kCur) && day(t) <= cutoffCur);
@@ -48,7 +50,7 @@ export function compareMonths(allTx, ym, today = new Date()) {
  *         maxMonth, categories:[{key, name, amount, count, share, items}], top:[내역 5개], expenses:[지출 전체, 큰 순서],
  *         byMember, byTag, byCard, count }   — items: 그 묶음의 지출 내역(큰 금액 순, 리포트에서 펼쳐 보기용)
  */
-export function yearReport(allTx, year, { members = [], cards = [] } = {}) {
+export function yearReport(allTx, year, { members = [], cards = [], today = new Date() } = {}) {
   const inYear = allTx.filter((t) => typeof t.date === 'string' && t.date.startsWith(`${year}-`));
   const prevYear = allTx.filter((t) => typeof t.date === 'string' && t.date.startsWith(`${year - 1}-`));
   const months = Array.from({ length: 12 }, (_, i) => {
@@ -74,7 +76,17 @@ export function yearReport(allTx, year, { members = [], cards = [] } = {}) {
   const cardName = (id) => (id === 'cash' ? '현금·기타' : cards.find((x) => x.id === id)?.name || '삭제된 카드');
 
   const withData = months.filter((x) => x.exp > 0);
+  // 월평균: 12로 나누지 않고 기록이 있는 달로만 (중간에 쓰기 시작한 해·올해가 낮게 나오지 않게).
+  // 올해 이번 달은 아직 덜 끝났으니 다른 달이 있으면 뺌
+  const isThisYear = today.getFullYear() === year;
+  let avgMonths = months.filter((x) => x.inc || x.exp);
+  const partial = isThisYear && avgMonths.some((x) => x.m === today.getMonth() + 1) && avgMonths.length > 1;
+  if (partial) avgMonths = avgMonths.filter((x) => x.m !== today.getMonth() + 1);
+  const n = avgMonths.length;
+  const avg = { months: n, excludesCurrent: partial,
+    inc: n ? avgMonths.reduce((a, x) => a + x.inc, 0) / n : 0, exp: n ? avgMonths.reduce((a, x) => a + x.exp, 0) / n : 0 };
   return {
+    avg,
     year, months, inc, exp, net: inc - exp, rate: inc > 0 ? Math.round(((inc - exp) / inc) * 100) : null,
     prev, incPct: pct(inc, prev.inc), expPct: pct(exp, prev.exp),
     maxMonth: withData.length ? withData.reduce((a, b) => (b.exp > a.exp ? b : a)) : null,
@@ -94,7 +106,7 @@ export function yearReport(allTx, year, { members = [], cards = [] } = {}) {
  *            tags:[] (모두 포함), card:'all'|'cash'|id, min, max (0/빈값=제한 없음), q:'키워드' }
  * 반환: { list (최신순), count, inc, exp }
  */
-export function searchTx(allTx, f, members = []) {
+export function searchTx(allTx, f, members = [], cards = []) {
   const q = (f.q || '').trim().toLowerCase();
   const isMember = (id) => members.some((m) => m.id === id);
   const list = allTx.filter((t) => {
@@ -114,7 +126,10 @@ export function searchTx(allTx, f, members = []) {
     if (f.min && t.amount < f.min) return false;
     if (f.max && t.amount > f.max) return false;
     if (q) {
-      const hay = `${t.memo || ''} ${t.category} ${(t.tags || []).join(' ')} ${members.find((m) => m.id === t.memberId)?.name || ''}`.toLowerCase();
+      // 메모·카테고리·태그·사람(공동)·카드 이름으로
+      const who = members.length ? members.find((m) => m.id === t.memberId)?.name || '공동' : '';
+      const card = t.cardId ? cards.find((c) => c.id === t.cardId)?.name || '' : '';
+      const hay = `${t.memo || ''} ${t.category} ${(t.tags || []).join(' ')} ${who} ${card}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;

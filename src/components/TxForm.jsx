@@ -39,7 +39,8 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
   const [inst, setInst] = useState(initial?.inst || 1);
   // 누가: 등록된 사람 id 또는 null(공동). 삭제된 사람이 지정돼 있던 내역은 공동으로 보임
   const validId = (id) => (id && members.some((m) => m.id === id) ? id : null);
-  const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : validId(prefill?.memberId ?? defaultMemberId)));
+  // 즐겨찾기로 열면 그 즐겨찾기의 사람(공동이면 공동), 아니면 이 기기의 '나'
+  const [memberId, setMemberId] = useState(() => (initial ? validId(initial.memberId) : prefill ? validId(prefill.memberId) : validId(defaultMemberId)));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   // 새 내역: 매달 반복으로도 등록 / 수정: 반복 켜기·끄기 (repeatRule = 이 내역과 연결된 규칙)
@@ -222,7 +223,7 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
             <span className="hint">
               {!canRepeat ? '반복 내역이 가득 찼어요 (최대 100개)'
                 : instBlock ? '할부는 반복으로 등록할 수 없어요'
-                : repeat && day ? <>매달 {day}일에 자동으로 기록돼요{fill > 0 ? ` · 지난달까지 빠진 ${fill}개월도 바로 채워요` : ''}{type === 'expense' && cardId ? ' · 카드·태그는 이번 내역에만' : ''}. ☰ → 반복 내역에서 고치거나 끌 수 있어요</>
+                : repeat && day ? <>매달 {day}일에 자동으로 기록돼요{fill > 0 ? ` · 지난달까지 빠진 ${fill}개월도 바로 채워요` : ''}. ☰ → 반복 내역에서 고치거나 끌 수 있어요</>
                 : '월세·통신비·구독료·월급처럼 매달 같은 날 생기면 켜 두세요'}
             </span>
           </div>

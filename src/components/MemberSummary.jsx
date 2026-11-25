@@ -32,7 +32,7 @@ export default function MemberSummary({ list, members, who, onSelect, onManage }
           ))}
         </div>
       ) : (
-        <div className="empty-mini" style={{ padding: '6px 0 10px' }}>이번 달 지출이 아직 없어요.</div>
+        <div className="empty-mini" style={{ padding: '6px 0 10px' }}>이 달 지출이 아직 없어요.</div>
       )}
 
       <table className="member-table">

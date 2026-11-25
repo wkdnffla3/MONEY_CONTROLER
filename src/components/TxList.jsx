@@ -23,11 +23,13 @@ export default function TxList({ items, filter, onFilter, query, onQuery, onOpen
     if (view === 'calendar') list = day ? list.filter((t) => t.date === day) : [];
     if (filter !== 'all') list = list.filter((t) => (t.type === 'income') === (filter === 'income'));
     const q = query.trim().toLowerCase();
+    // 메모·카테고리·사람 이름('공동' 포함)·카드 이름·태그(#붙여도 됨)
     if (q) list = list.filter((t) => (t.memo || '').toLowerCase().includes(q) || (t.category || '').toLowerCase().includes(q)
-      || (findMember(members, t.memberId)?.name || '').toLowerCase().includes(q)
+      || (members.length > 0 && (findMember(members, t.memberId)?.name || '공동').toLowerCase().includes(q))
+      || (t.cardId && (cards.find((c) => c.id === t.cardId)?.name || '').toLowerCase().includes(q))
       || (t.tags || []).some((x) => x.toLowerCase().includes(q.replace(/^#/, ''))));
     return [...list].sort((a, b) => (a.date === b.date ? (b.createdAt || 0) - (a.createdAt || 0) : a.date < b.date ? 1 : -1));
-  }, [items, filter, query, members, view, day]);
+  }, [items, filter, query, members, cards, view, day]);
 
   const groups = useMemo(() => {
     const m = new Map();
