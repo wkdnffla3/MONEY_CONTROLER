@@ -95,7 +95,8 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 주간·월간 리포트 (009) | pg_cron이 UTC 0시(= 한국 9시)에 함수 호출. 주간 = 지난주 월~일, 월간 = 지난달. 그 기간 내역 없으면 안 보냄 |
 | 변경 기록 (010) | DB 트리거가 기록(앱에서 수정·삭제 불가), 90일 보관. 같은 내용 재저장은 기록 안 함. 되살리기 = 같은 ID로 upsert. 장바구니 담기·빼기는 화면에서 숨김 |
 | 내역 댓글 (010) | 온라인 전용, 보낼 목록을 거치지 않음. 내 댓글만 삭제, 수정 없음. 내역을 지워도 댓글은 남아서 되살리면 다시 붙음. 푸시는 쓴 사람 계정의 모든 기기 제외 |
-| 즐겨찾기 보기 | `lib/favorites.js` `groupFavorites`: "누가"(memberId) 기준 묶음, 이 기기 사람(meId) 먼저 → 사람 목록 순 → 공동(없음·지워진 사람). 묶음이 2개 이상일 때만 탭·묶음 이름. 펼치기·탭은 기기별 localStorage `ledger.favView`. 순서 바꾸기는 `moveInGroup`(같은 묶음 안에서만) |
+| 즐겨찾기 보기 | `lib/favorites.js` `groupFavorites`(= `lib/members.js` `groupByMember`, 반복 내역과 공용): "누가"(memberId) 기준 묶음, 이 기기 사람(meId) 먼저 → 사람 목록 순 → 공동(없음·지워진 사람). 묶음이 2개 이상일 때만 탭·묶음 이름. 펼치기·탭은 기기별 localStorage `ledger.favView`. 순서 바꾸기는 `moveInGroup`(같은 묶음 안에서만) |
+| 반복 내역 보기 | `RecurringManager`가 `groupByMember`로 "누가" 기준 묶음(나 먼저 → 사람 순 → 공동). 사람 목록이 있고 묶음이 2개 이상일 때만 묶음 이름·개수·매달 합계(`monthlyTotals`: 일시정지·끝난 규칙 제외), 이때 줄마다 이름표는 숨김. 새 규칙의 "누가" 기본값 = 이 기기 사람(meId) |
 | 구독 제안 → 규칙 | `ruleFromSuggestion`: `last`·`start` = 제안의 `lastYm`(마지막 결제 달). 지난달이면 이번 달 결제일에 기록됨 |
 | 반복 다시 시작 | `resumeRule`(lib/recurring): 일시정지 → 다시 시작 때 `last`를 "이번 달 그날이 지났으면 이번 달, 아니면 지난달"로 올려서 멈춘 달을 채우지 않음 |
 | 새 내역 → 매달 반복 | `TxForm`의 "🔁 매달 반복"(새 내역만) → `App.addTx`가 `ruleFromTx`(lib/recurring)로 규칙을 만들고 `last`=그 달, 입력한 내역의 ID는 `recurringTxId(규칙ID, 그 달)` → 같은 달 중복 없음. 지난달 날짜면 자동 등록 효과가 빠진 달을 채움. 할부(inst>1)·규칙 100개(`MAX_RECURRING`)면 꺼짐. 규칙엔 카드·태그 없음 |

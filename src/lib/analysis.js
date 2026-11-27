@@ -60,7 +60,9 @@ export function yearReport(allTx, year, { members = [], cards = [], today = new 
   });
   const inc = sumBy(inYear, 'income'), exp = sumBy(inYear, 'expense');
   const prev = { inc: sumBy(prevYear, 'income'), exp: sumBy(prevYear, 'expense') };
-  const expenses = inYear.filter((t) => t.type !== 'income').sort((a, b) => b.amount - a.amount || (a.date < b.date ? 1 : -1));
+  // 같은 금액이면 최근 날짜 먼저, 날짜도 같으면 나중에 입력한 것 먼저 (비교가 양쪽에서 일관되게 → 볼 때마다 순서가 바뀌지 않음)
+  const expenses = inYear.filter((t) => t.type !== 'income').sort((a, b) => b.amount - a.amount
+    || (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (b.createdAt || 0) - (a.createdAt || 0));
 
   const group = (keyOf, nameOf) => {
     const m = new Map();

@@ -114,6 +114,21 @@ export function nextDate(rule, today = new Date()) {
 export const MAX_RECURRING = 100;
 
 /**
+ * 한 달에 자동으로 기록되는 금액 합계 (반복 내역 묶음 머리글용) → { exp, inc, active }
+ * 일시정지했거나 끝난(끝나는 달이 지난) 규칙은 빼고, active 는 센 규칙 수
+ */
+export function monthlyTotals(rules, today = new Date()) {
+  const cur = toNum(ymOf(today));
+  let exp = 0, inc = 0, active = 0;
+  for (const r of rules || []) {
+    if (!r.active || (r.end && toNum(r.end) < cur)) continue;
+    active += 1;
+    if (r.type === 'income') inc += r.amount; else exp += r.amount;
+  }
+  return { exp, inc, active };
+}
+
+/**
  * 새 내역을 "매달 반복"으로 저장할 때의 규칙. 그 날짜의 일(day)마다, 그 달부터.
  * 입력한 내역이 그 달 몫이므로 last = 그 달 → 같은 달은 다시 만들지 않음.
  * (지난달 날짜로 넣으면 그다음 달부터 이번 달까지 빠진 달은 자동으로 채워짐)

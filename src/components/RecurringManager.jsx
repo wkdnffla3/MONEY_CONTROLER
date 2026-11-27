@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
-import { SHARED_LABEL, colorVar, findMember, memberColor } from '../lib/members';
+import { SHARED_LABEL, colorVar, findMember, groupByMember, memberColor } from '../lib/members';
 import { newId, MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
-import { MAX_RECURRING, dueMonths, nextDate, occurrenceDate, resumeRule, ymOf } from '../lib/recurring';
+import { MAX_RECURRING, dueMonths, monthlyTotals, nextDate, occurrenceDate, resumeRule, ymOf } from '../lib/recurring';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 import { useFormData } from '../lib/formData';
 import TagInput from './TagInput';
@@ -16,7 +16,14 @@ const fmtDate = (s) => { const [, m, d] = s.split('-').map(Number); return `${m}
  * 반복 내역 목록 + 추가/수정. 바꿀 때마다 바로 저장(onSave(전체 목록, 안내 문구)).
  * rules 는 항상 최신 저장 상태(자동 등록으로 last가 바뀐 것 포함)를 받아서 그 위에 고침.
  */
-export default function RecurringManager({ rules, members, onSave }) {
+// 묶음 머리글의 "매달 얼마" (진행 중인 규칙만)
+const totalText = (rules) => {
+  const t = monthlyTotals(rules);
+  const parts = [t.exp ? `-${won(t.exp)}` : '', t.inc ? `+${won(t.inc)}` : ''].filter(Boolean);
+  return parts.length ? `매달 ${parts.join(' / ')}` : '진행 중 없음';
+};
+
+export default function RecurringManager({ rules, members, meId = null, onSave }) {
   const [editing, setEditing] = useState(null); // null | 'new' | rule id
   const cats = useCategories();
   const { cards } = useFormData();
@@ -32,7 +39,7 @@ export default function RecurringManager({ rules, members, onSave }) {
 
   if (editing) {
     const rule = editing === 'new' ? null : list.find((r) => r.id === editing);
-    return <RuleForm rule={rule} members={members} onCancel={() => setEditing(null)} onDone={upsertRule} />;
+    return <RuleForm rule={rule} members={members} meId={meId} onCancel={() => setEditing(null)} onDone={upsertRule} />;
   }
 
   return (
@@ -41,9 +48,19 @@ export default function RecurringManager({ rules, members, onSave }) {
 
       {list.length === 0 ? (
         <div className="empty-mini">등록된 반복 내역이 없어요.</div>
-      ) : (
+      ) : groupByMember(list, members, meId).map((g, _gi, groups) => {
+        // 사람이 둘 이상(공동 포함)으로 나뉠 때만 묶음 이름을 보여 줌. 묶음 이름이 있으면 줄마다 붙던 이름표는 뺌
+        const split = members.length > 0 && groups.length > 1;
+        return (
+        <section key={g.key} className="rule-group" aria-label={split ? `${g.label}의 반복 내역` : undefined}>
+          {split && (
+            <h4 className="fav-glabel rule-glabel">
+              <span className="dot" style={{ background: g.color }} />{g.label}{g.isMe ? ' (나)' : ''} · {g.items.length}개
+              <span className="rule-gsum num">{totalText(g.items)}</span>
+            </h4>
+          )}
         <ul className="rule-list">
-          {list.map((r) => {
+          {g.items.map((r) => {
             const m = findMember(members, r.memberId);
             const next = nextDate(r);
             return (
@@ -52,7 +69,7 @@ export default function RecurringManager({ rules, members, onSave }) {
                 <div className="meta">
                   <div className="cat">
                     {r.memo || r.category}
-                    {members.length > 0 && (
+                    {members.length > 0 && !split && (
                       <span className="who-badge" style={{ marginLeft: 6 }}><span className="dot" style={{ background: memberColor(m) }} />{m ? m.name : SHARED_LABEL}</span>
                     )}
                   </div>
@@ -73,7 +90,9 @@ export default function RecurringManager({ rules, members, onSave }) {
             );
           })}
         </ul>
-      )}
+        </section>
+        );
+      })}
 
       {list.length < MAX_RULES && (
         <button type="button" className="btn ghost" onClick={() => setEditing('new')}>+ 반복 내역 추가</button>
@@ -83,14 +102,15 @@ export default function RecurringManager({ rules, members, onSave }) {
   );
 }
 
-function RuleForm({ rule, members, onCancel, onDone }) {
+function RuleForm({ rule, members, meId = null, onCancel, onDone }) {
   const cats = useCategories();
   const thisYm = ymOf(new Date());
   const [type, setType] = useState(rule?.type || 'expense');
   const [amount, setAmount] = useState(rule ? formatAmountInput(rule.amount) : '');
   const [category, setCategory] = useState(rule?.category || cats.expense[0].name);
   const [memo, setMemo] = useState(rule?.memo || '');
-  const [memberId, setMemberId] = useState(rule?.memberId && members.some((m) => m.id === rule.memberId) ? rule.memberId : null);
+  // 새 규칙의 "누가"는 이 기기를 쓰는 사람으로 미리 선택 (즐겨찾기와 같게)
+  const [memberId, setMemberId] = useState(() => { const id = rule ? rule.memberId : meId; return id && members.some((m) => m.id === id) ? id : null; });
   const [day, setDay] = useState(rule?.day || new Date().getDate());
   const [start, setStart] = useState(rule?.start || thisYm);
   const [end, setEnd] = useState(rule?.end || '');

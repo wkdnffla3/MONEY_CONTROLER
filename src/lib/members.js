@@ -14,6 +14,22 @@ export const findMember = (members, id) => (id ? members.find((m) => m.id === id
 /** 내역의 담당 키: 등록된 사람이면 그 id, 아니면(비었거나 삭제된 사람) 공동 */
 export const ownerKey = (members, t) => (findMember(members, t.memberId) ? t.memberId : SHARED);
 
+/**
+ * "누가"(memberId) 기준 묶음 — 즐겨찾기·반복 내역 공용.
+ * [{ key, label, color, isMe, items }] — 이 기기를 쓰는 사람(meId) 먼저, 그다음 사람 목록 순서, 마지막에 공동.
+ * 사람을 정하지 않았거나 지워진 사람이면 공동. 빈 묶음은 뺌. 묶음 안 순서는 원래 순서 그대로.
+ */
+export function groupByMember(items, members = [], meId = null) {
+  const keyOf = (x) => (findMember(members, x.memberId) ? x.memberId : SHARED);
+  const order = [...(findMember(members, meId) ? [meId] : []), ...members.map((m) => m.id).filter((id) => id !== meId), SHARED];
+  return order
+    .map((key) => {
+      const m = key === SHARED ? null : findMember(members, key);
+      return { key, label: m ? m.name : SHARED_LABEL, color: memberColor(m), isMe: !!m && key === meId, items: items.filter((x) => keyOf(x) === key) };
+    })
+    .filter((g) => g.items.length > 0);
+}
+
 /** 보기 필터 적용: 'all' | SHARED | 사람 id */
 export function filterByOwner(list, members, who) {
   if (who === 'all') return list;

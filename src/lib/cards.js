@@ -58,7 +58,8 @@ export function cardBills(txList, cards, months) {
         else if (toNum(c.ym) > last) remaining += c.amount;
       }
     }
-    for (const b of bills) b.items.sort((x, y) => (x.tx.date < y.tx.date ? -1 : 1));
+    // 날짜 순, 같은 날이면 입력 순 (같은 날끼리 비교 결과가 어긋나지 않게)
+    for (const b of bills) b.items.sort((x, y) => (x.tx.date < y.tx.date ? -1 : x.tx.date > y.tx.date ? 1 : (x.tx.createdAt || 0) - (y.tx.createdAt || 0)));
     return { card, bills, remaining };
   });
 }
