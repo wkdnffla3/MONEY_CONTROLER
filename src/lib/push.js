@@ -50,6 +50,7 @@ function askPermission() {
   });
 }
 
+let pushEpoch = 0; // 켜기·끄기를 할 때마다 +1 (확인 도중 사용자가 켜면 확인 결과로 건드리지 않게)
 const hasApis = () => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 
 async function registration() {
@@ -82,6 +83,7 @@ export async function getPushState() {
  * onStep(text): 지금 하는 단계 (화면에 보여 줌 → 멈추면 어디서 멈췄는지 알 수 있음)
  */
 export async function enablePush(prefs, ledgerId, onStep = () => {}) {
+  pushEpoch += 1;
   if (!supabase) throw new Error('Supabase 설정이 없어요');
   if (isInAppBrowser()) throw new Error('카카오톡·네이버 같은 앱 안 브라우저에서는 켤 수 없어요. 크롬·사파리로 열어 주세요');
   if (Notification.permission !== 'granted') {
@@ -164,3 +166,25 @@ export async function hasPushSubscription() {
   const reg = await registration().catch(() => null);
   return !!(reg && await reg.pushManager.getSubscription().catch(() => null));
 }
+
+/**
+ * 로그인 직후: 이 브라우저의 푸시 구독이 지금 계정 것인지 확인.
+ * 다른 계정이 로그아웃하지 않고 떠난 기기(세션 만료 등)면 그 계정의 알림이 이 기기로 계속 올 수 있음
+ * → 서버에서 내 계정의 구독으로 안 보이면(RLS: 내 기기 줄만 보임) 브라우저 구독을 해제 → 그 주소는 무효가 되어
+ *   발송 함수가 다음 발송 때 지움. 반환: 해제했으면 true
+ */
+export async function reconcilePush() {
+  if (!supabase || !hasApis()) return false;
+  const epoch = pushEpoch;
+  const reg = await registration().catch(() => null);
+  const sub = reg ? await timeout(reg.pushManager.getSubscription(), 5000, '').catch(() => null) : null;
+  if (!sub) return false;
+  const { data, error } = await timeout(
+    supabase.from('push_subscriptions').select('id').eq('endpoint', sub.endpoint).limit(1), SERVER_TIMEOUT_MS, '',
+  ).catch((e) => ({ data: null, error: e }));
+  if (error || !Array.isArray(data)) return false; // 확인 못 하면 건드리지 않음 (오프라인·007 전 등)
+  if (data.length || epoch !== pushEpoch) return false;
+  await timeout(sub.unsubscribe(), 5000, '').catch(() => {});
+  return true;
+}
+

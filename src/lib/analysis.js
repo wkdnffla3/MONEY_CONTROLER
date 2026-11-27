@@ -121,7 +121,9 @@ export function searchTx(allTx, f, members = [], cards = []) {
     }
     if (f.tags?.length && !f.tags.every((tag) => (t.tags || []).includes(tag))) return false;
     if (f.card && f.card !== 'all') {
-      if (f.card === 'cash' ? !!t.cardId : t.cardId !== f.card) return false;
+      // 지운 카드로 낸 내역은 화면·리포트처럼 '현금·기타'로
+      const hasCard = !!t.cardId && (!cards.length || cards.some((c) => c.id === t.cardId));
+      if (f.card === 'cash' ? hasCard : t.cardId !== f.card) return false;
     }
     if (f.min && t.amount < f.min) return false;
     if (f.max && t.amount > f.max) return false;

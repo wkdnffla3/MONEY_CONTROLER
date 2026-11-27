@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildNotification, getPrefs, shouldSend } from '../lib/notify';
-import { hasPushSubscription } from '../lib/push';
+import { hasPushSubscription, reconcilePush } from '../lib/push';
 
 const SHOW_MS = 6000;
 const MAX_BANNERS = 3;
@@ -21,7 +21,11 @@ export function useNotifier(uid, members) {
 
   useEffect(() => { setPrefsState(uid ? getPrefs(uid) : null); }, [uid]);
   const refreshPush = useCallback(() => { hasPushSubscription().then((v) => { pushOn.current = v; }, () => {}); }, []);
-  useEffect(() => { refreshPush(); }, [uid, refreshPush]);
+  // 로그인한 계정이 바뀌면: 남의 계정 구독이 이 브라우저에 남아 있으면 정리한 뒤 상태 확인
+  useEffect(() => {
+    if (!uid) return;
+    reconcilePush().catch(() => false).finally(refreshPush);
+  }, [uid, refreshPush]);
   const prefsRef = useRef(prefs);
   prefsRef.current = prefs;
 
