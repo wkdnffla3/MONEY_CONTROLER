@@ -214,6 +214,20 @@ export function buildReport({ period, range, txs = [], budget = 0 }) {
   };
 }
 
+// ===== 웹 푸시 topic =====
+// topic 이 같으면 푸시 서비스가 아직 못 전한 알림을 새 것으로 바꿔 버림 → 알림 태그(tag)가 같을 때만 같아야 함.
+// topic 은 영문·숫자·_- 32자까지라, 그냥 자르면 뒷부분(결제 시각 등)이 잘려 다른 결제끼리 합쳐짐
+// → 길면 앞부분 + 전체 태그의 해시
+export function pushTopic(tag) {
+  const clean = String(tag ?? '').replace(/[^A-Za-z0-9_-]/g, '');
+  if (clean.length <= 32) return clean || 'note';
+  let h = 0x811c9dc5; // FNV-1a 32비트
+  const s = String(tag);
+  for (let i = 0; i < s.length; i += 1) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193) >>> 0;
+  const hash = h.toString(36).padStart(7, '0');
+  return `${clean.slice(0, 32 - hash.length - 1)}-${hash}`;
+}
+
 // ===== 푸시 주소 검사 =====
 // 실제 브라우저 푸시 서비스 주소만 허용 (DB 의 public.is_push_endpoint 와 같은 규칙, 012).
 // 구글 FCM(크롬 등), 모질라(파이어폭스), 마이크로소프트 WNS(엣지), 애플(사파리·아이폰)

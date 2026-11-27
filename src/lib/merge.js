@@ -6,7 +6,13 @@
 //   theirs = 지금 서버 값 (다른 기기가 바꾼 것)
 // 결과: { ok: true, value } 또는 { ok: false } (사용자에게 물어봐야 함)
 
-const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// 내용 비교: 객체 키 순서는 무시 (DB jsonb 는 키 순서를 바꿔 돌려주므로, 같은 내용인데 다르다고 보면
+// 내가 이미 올린 저장을 '다른 기기가 고침'으로 잘못 알거나 합칠 수 있는 걸 못 합침). undefined 와 null 은 같게 봄
+const sortKeys = (_k, v) => (v && typeof v === 'object' && !Array.isArray(v)
+  ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v);
+export const stableJson = (v) => JSON.stringify(v ?? null, sortKeys);
+export const sameJson = (a, b) => stableJson(a) === stableJson(b);
+const same = sameJson;
 
 /** 객체 하나를 칸별로 합침 (id 같은 항목) */
 function mergeObject(base, mine, theirs) {
