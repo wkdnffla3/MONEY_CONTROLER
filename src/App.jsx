@@ -6,7 +6,7 @@ import { useAppUpdate } from './hooks/useAppUpdate';
 import { configError } from './lib/supabase';
 import { koError } from './lib/errors';
 import {
-  isCurrentMonth, nextMonth, pad, prevMonth, sumByType, todayStr, won, ymKey,
+  clipText, isCurrentMonth, nextMonth, pad, prevMonth, sumByType, todayStr, won, ymKey,
 } from './lib/format';
 
 import Header from './components/Header';
@@ -414,7 +414,8 @@ export default function App() {
       type: f.type, amount: f.amount, category: f.category, memo: f.memo || '', date: todayStr(),
       // 사람이 정해진 즐겨찾기 → 그 사람, '공동' 묶음(사람 없음·지운 사람) → 공동 (화면의 묶음과 같게)
       memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : null,
-      tags: f.tags || [], cardId: f.cardId && ledger.cards.some((c) => c.id === f.cardId) ? f.cardId : null, inst: 1, createdAt: Date.now(),
+      // 수입에는 카드 없음 (TxForm 과 같은 규칙)
+      tags: f.tags || [], cardId: f.type === 'expense' && f.cardId && ledger.cards.some((c) => c.id === f.cardId) ? f.cardId : null, inst: 1, createdAt: Date.now(),
     };
     if (!isCurrentMonth(ym)) setYm(thisMonth());
     ledger.saveTx(id, data)
@@ -425,7 +426,8 @@ export default function App() {
   const saveFavorites = (...a) => withUndo('favorites')(...a); // withUndo 는 아래에 정의
   const favoriteFromTx = (t) => {
     if (ledger.favorites.length >= 20) { show('즐겨찾기는 20개까지 만들 수 있어요'); return; }
-    const label = (t.memo || t.category).trim().slice(0, 16) || t.category.slice(0, 16);
+    // 긴 메모(링크·이모지 포함)를 16자로 자를 때 이모지를 반으로 자르지 않게 (반쪽 이모지는 서버가 거절)
+    const label = clipText((t.memo || t.category).trim(), 16).trim() || clipText(t.category, 16);
     const fav = { id: newId().slice(0, 40), label, type: t.type, amount: t.amount, category: t.category, memo: t.memo || '',
       memberId: t.memberId ?? null, cardId: t.cardId ?? null, tags: t.tags || [] };
     saveFavorites([...ledger.favorites, fav], `"${label}" 즐겨찾기를 만들었어요`);

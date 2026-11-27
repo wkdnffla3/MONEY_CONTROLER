@@ -11,6 +11,11 @@ assert.ok(extractLinks('https://example.com/' + 'a'.repeat(100))[0].label.endsWi
 assert.equal(extractLinks('https://한국.kr/가?x=1')[0].href.startsWith('https://xn--'), true);
 assert.ok(hasLink('see HTTPS://X.COM')); assert.ok(!hasLink('그냥 메모'));
 assert.equal(extractLinks(null).length, 0);
+// 주소 안의 짝 맞는 괄호는 그대로, 바깥 괄호·문장부호만 뗌
+assert.equal(extractLinks('https://ko.wikipedia.org/wiki/Seoul_(city)')[0].href, 'https://ko.wikipedia.org/wiki/Seoul_(city)');
+assert.equal(extractLinks('(https://en.wikipedia.org/wiki/A_(b)).')[0].href, 'https://en.wikipedia.org/wiki/A_(b)');
+assert.equal(extractLinks('[https://a.com/x]')[0].href, 'https://a.com/x');
+assert.equal(extractLinks('보기: https://a.com/p?q=1!?')[0].href, 'https://a.com/p?q=1');
 console.log('link tests: all passed');
 
 // ===== 푸시 주소 허용 목록 (012) =====

@@ -118,13 +118,21 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+// 알림이 여는 주소: 이 앱 안의 주소만 ("//다른사이트"·"/\다른사이트" 처럼 바깥으로 나가는 주소는 첫 화면으로)
+const safeUrl = (raw) => {
+  try {
+    const u = new URL(typeof raw === 'string' ? raw : '/', self.location.origin);
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : '/';
+  } catch { return '/'; }
+};
+
 // ===== 웹 푸시 (supabase/functions/push-notify 가 보냄) =====
 // 앱 화면을 보고 있으면 앱 안 배너가 이미 알려주므로 시스템 알림은 생략
 self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch { data = { title: '가계부', body: event.data ? event.data.text() : '' }; }
   const title = String(data.title || '가계부').slice(0, 80);
-  const url = typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/';
+  const url = safeUrl(data.url);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       if (list.some((c) => c.visibilityState === 'visible' && c.focused)) return undefined;
@@ -142,8 +150,7 @@ self.addEventListener('push', (event) => {
 // 알림을 누르면: 열린 앱 창이 있으면 그 창으로, 없으면 새로 열기
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const raw = event.notification.data && event.notification.data.url;
-  const url = typeof raw === 'string' && raw.startsWith('/') ? raw : '/';
+  const url = safeUrl(event.notification.data && event.notification.data.url);
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
       const win = list.find((c) => new URL(c.url).origin === self.location.origin);

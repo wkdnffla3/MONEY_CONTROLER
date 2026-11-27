@@ -202,3 +202,35 @@ console.log('feature unit tests: all passed');
   assert.deepEqual(up.map((x) => [x.rule.id, x.date]), [['a', '2026-11-25'], ['h', '2026-11-30']]);
 }
 console.log('upcoming ok');
+
+// 한 건으로 합치기: 물품별 몫의 합 = 결제 금액 (결제 금액이 물품 수보다 작아도), 0원 몫은 paid 없음
+{
+  const { splitTotal } = await import('../../src/lib/shopping.js');
+  assert.deepEqual(splitTotal(100, [1, 1, 1]), [34, 33, 33]);
+  assert.deepEqual(splitTotal(10, [0, 0]), [5, 5]);
+  assert.deepEqual(splitTotal(7, [5000, 6000, 4000]).reduce((a, b) => a + b, 0), 7);
+  assert.deepEqual(splitTotal(0, [1, 2]), [0, 0]);
+  assert.deepEqual(splitTotal(5, []), []);
+  const many = Array.from({ length: 12 }, (_, k) => it('m' + k, { price: 1000 }));
+  const p = planPurchase(many, { purchaseId: 'P9', mode: 'combined', date: '2026-11-27', category: '식비', total: 10, amounts: {} });
+  assert.equal(p.items.reduce((a, x) => a + (x.data.paid || 0), 0), 10);
+  assert.equal(p.items.filter((x) => x.data.paid === null).length, 2);
+  assert.ok(p.items.every((x) => x.data.paid === null || x.data.paid >= 1));
+  // 큰 금액도 합이 정확히 맞음
+  const p2 = planPurchase(many.slice(0, 3), { purchaseId: 'P10', mode: 'combined', date: '2026-11-27', category: '식비', total: 9_999_999_999, amounts: {} });
+  assert.equal(p2.items.reduce((a, x) => a + x.data.paid, 0), 9_999_999_999);
+  console.log('purchase split tests: all passed');
+}
+
+// 글자 수로 자를 때 이모지를 반으로 자르지 않음 (반쪽 이모지는 서버가 거절 → 저장 실패)
+{
+  const { clipText } = await import('../../src/lib/format.js');
+  const { isValidTags } = await import('../../src/lib/outbox.js');
+  assert.equal(clipText('여행여행여행여행여행여🎉', 12), '여행여행여행여행여행여');
+  assert.equal(clipText('여행여행여행여행여행🎉', 12), '여행여행여행여행여행🎉');
+  assert.equal(clipText('abc', 12), 'abc');
+  assert.equal(clipText(null, 5), '');
+  const tag = clipText('가나다라마바사아자차카🎉', 12);
+  assert.ok(!/[\uD800-\uDBFF]$/.test(tag) && isValidTags([tag]));
+  console.log('clip text tests: all passed');
+}

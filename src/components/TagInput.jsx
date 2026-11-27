@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { MAX_TAGS, MAX_TAG_LEN } from '../lib/outbox';
+import { clipText } from '../lib/format';
 
-const clean = (s) => s.replace(/^#+/, '').replace(/[,\s]+/g, ' ').trim().slice(0, MAX_TAG_LEN);
+// 이모지를 반으로 자르지 않고(서버가 거절), 자른 뒤 끝에 남은 공백도 뗌 ("여행 " 과 "여행" 이 따로 생기지 않게)
+const clean = (s) => clipText(s.replace(/^#+/, '').replace(/[,\s]+/g, ' ').trim(), MAX_TAG_LEN).trim();
 
 /** 태그 입력: 엔터·쉼표로 추가, ✕로 빼기, 예전에 쓴 태그 추천 */
 export default function TagInput({ value, onChange, suggestions = [], id }) {
