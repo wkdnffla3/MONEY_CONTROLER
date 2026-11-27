@@ -413,6 +413,7 @@ Supabase 무료 프로젝트는 7일 동안 DB 활동이 적으면 일시정지�
 
 ### 2026-11-27
 - **추가** Supabase 무료 프로젝트 일시정지 방지: GitHub Actions가 3일마다 DB를 한 번 조회 (`.github/workflows/keepalive.yml`)
+- **수정** keepalive 가 401로 실패하던 문제: 새 형식 공개 키(sb_publishable_…)는 Authorization 헤더로 보내면 거절됨 → apikey 헤더만 보냄, 실패하면 서버 응답과 원인 안내를 함께 표시
 - **할 일** GitHub 저장소 Secrets에 `SUPABASE_URL`·`SUPABASE_ANON_KEY` 등록 후 Actions → keepalive → Run workflow로 확인
 
 ### 2026-11-26

@@ -31,12 +31,17 @@ jobs:
             exit 1
           fi
           # 실패하면(서버가 멈췄거나 주소가 틀림) 이 작업이 빨간색이 되고 GitHub 가 메일로 알려줌
-          code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 10 \
+          # apikey 헤더만 보냄: 새 형식 키(sb_publishable_...)는 Authorization: Bearer 로 보내면 401 이 남
+          code=$(curl -sS -o body.txt -w '%{http_code}' --retry 3 --retry-delay 10 \
             "${SUPABASE_URL%/}/rest/v1/transactions?select=id&limit=1" \
-            -H "apikey: $SUPABASE_ANON_KEY" \
-            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+            -H "apikey: $SUPABASE_ANON_KEY")
           echo "응답 코드: $code"
           if [ "$code" != "200" ]; then
-            echo "::error::Supabase 응답이 $code 예요. 프로젝트가 일시정지됐다면 대시보드에서 Resume project 를 눌러 주세요"
+            echo "서버 응답: $(head -c 300 body.txt)"
+            case "$code" in
+              401) echo "::error::Supabase 가 키를 거절했어요(401). SUPABASE_ANON_KEY 값이 Vercel 의 VITE_SUPABASE_ANON_KEY 와 똑같은지(앞뒤 공백·줄바꿈 없이) 확인해 주세요" ;;
+              404) echo "::error::주소를 찾지 못했어요(404). SUPABASE_URL 이 https://프로젝트ID.supabase.co 형식인지 확인해 주세요" ;;
+              *)   echo "::error::Supabase 응답이 $code 예요. 프로젝트가 일시정지됐다면 대시보드에서 Resume project 를 눌러 주세요" ;;
+            esac
             exit 1
           fi
