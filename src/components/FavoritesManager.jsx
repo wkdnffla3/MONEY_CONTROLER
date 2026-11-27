@@ -24,7 +24,8 @@ function FavoriteForm({ initial, members, onSubmit, onCancel, onDelete }) {
     onSubmit({
       id: initial?.id || newId().slice(0, 40), label: label.slice(0, 16), type: f.type, amount: n, category: f.category,
       memo: f.memo.trim().slice(0, MAX_MEMO), memberId: f.memberId && members.some((m) => m.id === f.memberId) ? f.memberId : null,
-      cardId: initial?.cardId ?? null, tags: initial?.tags ?? [],
+      // 결제 카드는 지출에만 (지출 즐겨찾기를 수입으로 바꾸면 카드를 뺌)
+      cardId: f.type === 'expense' ? initial?.cardId ?? null : null, tags: initial?.tags ?? [],
     });
   };
 

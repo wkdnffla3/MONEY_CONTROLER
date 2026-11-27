@@ -25,13 +25,23 @@ export const MAX_MEMO = 200;
 const isStr = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
 const isAmount = (v, min) => Number.isSafeInteger(v) && v >= min && v <= MAX_AMOUNT;
 
+/** 실제로 있는 날짜인지 (YYYY-MM-DD, 1~9999년). 2026-02-30 같은 날짜는 DB가 거절해서 백업 복원 묶음 전체가 실패함 */
+export function isDateStr(v) {
+  if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false;
+  const [y, m, d] = v.split('-').map(Number);
+  if (y < 1 || m < 1 || m > 12 || d < 1) return false;
+  const leap = y % 4 === 0 && (y % 100 !== 0 || y % 400 === 0);
+  const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  return d <= days;
+}
+
 export function isValidTx(t) {
   return !!t && typeof t === 'object'
     && (t.type === 'expense' || t.type === 'income')
     && isAmount(t.amount, 1)
     && isStr(t.category, 20)
     && typeof (t.memo ?? '') === 'string' && (t.memo ?? '').length <= MAX_MEMO
-    && typeof t.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(t.date)
+    && isDateStr(t.date)
     && (t.memberId == null || isStr(t.memberId, 64))
     && (t.tags == null || isValidTags(t.tags))
     && (t.cardId == null || isStr(t.cardId, 64))
@@ -170,7 +180,7 @@ export function isValidItem(i) {
     && (i.status === 'todo' || i.status === 'bought')
     && (i.paid == null || isAmount(i.paid, 1))
     && (i.txId == null || isStr(i.txId, 64))
-    && (i.boughtAt == null || (typeof i.boughtAt === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(i.boughtAt)));
+    && (i.boughtAt == null || isDateStr(i.boughtAt));
 }
 
 export function isValidOp(o) {

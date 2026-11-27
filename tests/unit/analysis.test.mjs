@@ -200,3 +200,16 @@ console.log('analysis unit tests: all passed');
   assert.equal(csv[2], '2026-11-02,지출,쇼핑,300000,,삼성,3개월,');
   console.log('csv unit tests: all passed');
 }
+
+// 구독 제안 등록 안내: 언제부터 기록되는지 (마지막 결제가 지난달 + 결제일 지남 → 이번 달 몫 바로 기록)
+{
+  const { ruleFromSuggestion, suggestionStartText } = await import('../../src/lib/subscriptions.js');
+  const today = new Date(2026, 10, 20); // 2026-11-20
+  const sg = (lastYm, day) => ({ type: 'expense', amount: 13900, category: '구독', memo: '넷플릭스', day, lastYm });
+  assert.equal(suggestionStartText(ruleFromSuggestion(sg('2026-11', 5), 'r1', today), today), '12월 5일부터 자동 기록');
+  assert.equal(suggestionStartText(ruleFromSuggestion(sg('2026-10', 5), 'r2', today), today), '이번 달 5일 몫은 바로 기록돼요');
+  assert.equal(suggestionStartText(ruleFromSuggestion(sg('2026-10', 20), 'r3', today), today), '이번 달 20일 몫은 바로 기록돼요');
+  assert.equal(suggestionStartText(ruleFromSuggestion(sg('2026-10', 25), 'r4', today), today), '11월 25일부터 자동 기록');
+  assert.equal(suggestionStartText(ruleFromSuggestion(sg('2026-11', 31), 'r5', today), today), '12월 31일부터 자동 기록');
+  console.log('subscription start text tests: all passed');
+}

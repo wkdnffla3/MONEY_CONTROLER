@@ -57,14 +57,11 @@ export function planPurchase(items, opts) {
         cardId: opts.cardId ?? null, inst: 1, // 결제 카드 (일시불)
       },
     });
-    // 합계를 물품별 금액 비율로 나눠 기록(구매 기록 표시용). 마지막 물품이 나머지를 가져가 합이 정확히 맞게
-    const base = items.map((i) => opts.amounts?.[i.id] || expectedTotal(i));
-    const baseSum = base.reduce((a, b) => a + b, 0);
-    let left = opts.total;
+    // 합계를 물품별 금액 비율로 나눠 기록(구매 기록 표시용). 합이 항상 결제 금액과 정확히 같게 (최대 잔여 방식).
+    // 결제 금액이 물품 수보다 작아 0원이 되는 물품은 paid 를 비움(null) — 1원씩 억지로 주면 합이 결제 금액보다 커짐
+    const shares = splitTotal(opts.total, items.map((i) => opts.amounts?.[i.id] || expectedTotal(i)));
     items.forEach((i, k) => {
-      const share = k === items.length - 1 ? left : Math.max(1, Math.round(baseSum ? (opts.total * base[k]) / baseSum : opts.total / items.length));
-      left -= share;
-      updated.push({ id: i.id, data: { ...i, status: 'bought', checked: false, paid: Math.max(1, share), txId, boughtAt: date } });
+      updated.push({ id: i.id, data: { ...i, status: 'bought', checked: false, paid: shares[k] > 0 ? shares[k] : null, txId, boughtAt: date } });
     });
   } else {
     items.forEach((i, k) => {
@@ -83,6 +80,20 @@ export function planPurchase(items, opts) {
     });
   }
   return { txs, items: updated };
+}
+
+/** total 을 weights 비율로 나눈 정수 목록. 합 = total (weights 가 모두 0이면 똑같이) */
+export function splitTotal(total, weights) {
+  if (!weights.length) return [];
+  const sum = weights.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+  const w = sum ? weights.map((x) => (x > 0 ? x : 0)) : weights.map(() => 1);
+  const wSum = sum || weights.length;
+  const raw = w.map((x) => (total * x) / wSum);
+  const out = raw.map(Math.floor);
+  let left = total - out.reduce((a, b) => a + b, 0);
+  const order = raw.map((r, i) => [r - out[i], i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+  for (const [, i] of order) { if (left <= 0) break; out[i] += 1; left -= 1; }
+  return out;
 }
 
 /** 구매 기록을 결제(가계부 내역)별로 묶기, 최근 것 먼저 */

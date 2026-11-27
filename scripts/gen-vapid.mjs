@@ -3,6 +3,8 @@
 // 공개키 → Vercel 환경 변수 VITE_VAPID_PUBLIC_KEY 와 Supabase 비밀 값 VAPID_PUBLIC_KEY
 // 비밀키 → Supabase 비밀 값 VAPID_PRIVATE_KEY 에만 (Vercel·깃허브·채팅에 올리지 마세요)
 import { createECDH, randomBytes } from 'node:crypto';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export function generateVapidKeys() {
   const ecdh = createECDH('prime256v1');
@@ -16,7 +18,12 @@ export function generateVapidKeys() {
   };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// 직접 실행했을 때만 출력 (테스트에서 import 할 때는 조용히).
+// 주소 문자열을 그대로 비교하면 Windows(C:\…)나 한글·공백이 든 경로에서 달라서 아무것도 안 나왔음 → 경로로 바꿔 비교
+const isMain = (() => {
+  try { return !!process.argv[1] && path.resolve(fileURLToPath(import.meta.url)) === path.resolve(process.argv[1]); } catch { return false; }
+})();
+if (isMain) {
   const { publicKey, privateKey } = generateVapidKeys();
   const secret = randomBytes(24).toString('base64url');
   console.log(`

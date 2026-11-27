@@ -5,7 +5,7 @@
  * 조건: 최근까지 3달 이상 연속, 한 달에 한 번만, 금액 차이 10% 이내, 날짜 차이 6일 이내,
  *       마지막이 이번 달이나 지난달 (아직 계속되는 것), 이미 반복 내역이 있거나 "무시"한 건 제외
  */
-import { ymOf } from './recurring.js';
+import { nextDate, ymOf } from './recurring.js';
 import { MAX_MEMO } from './outbox.js';
 
 export const MIN_MONTHS = 3;
@@ -79,4 +79,16 @@ export function ruleFromSuggestion(s, id, today = new Date()) {
     day: Math.min(31, Math.max(1, s.day)), start: last, end: null, last, active: true,
     ...(s.cardId ? { cardId: s.cardId } : {}), ...(s.tags?.length ? { tags: [...s.tags] } : {}),
   };
+}
+
+/**
+ * 등록 안내 문구: 언제부터 기록되는지. 마지막 결제가 지난달이고 이번 달 결제일이 이미 지났으면
+ * 등록하자마자 이번 달 몫이 기록되므로 "다음 달부터"라고 하면 틀림
+ */
+export function suggestionStartText(rule, today = new Date()) {
+  const d = nextDate(rule, today);
+  if (!d) return '';
+  const [, m, day] = d.split('-').map(Number);
+  const todayKey = `${ymOf(today)}-${String(today.getDate()).padStart(2, '0')}`;
+  return d <= todayKey ? `이번 달 ${day}일 몫은 바로 기록돼요` : `${m}월 ${day}일부터 자동 기록`;
 }

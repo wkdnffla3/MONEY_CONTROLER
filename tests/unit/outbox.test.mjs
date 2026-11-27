@@ -155,3 +155,17 @@ assert.equal(S.rows.reduce((a, r) => a + r.pct, 0), 100);
   assert.equal(isValidOp({ opId: '1', kind: 'delete', id: 'a', base: '2' }), false);
 }
 console.log('outbox unit tests: all passed');
+
+// 실제로 있는 날짜만 (DB date 칸이 거절하는 날짜는 앞에서 걸러서 백업 복원 묶음 전체가 실패하지 않게)
+{
+  const { isDateStr, isValidTx: vt, isValidItem: vi } = await import('../../src/lib/outbox.js');
+  for (const ok of ['2026-11-27', '2024-02-29', '2000-02-29', '2026-12-31', '0001-01-01', '9999-12-31']) assert.equal(isDateStr(ok), true, ok);
+  for (const bad of ['2026-02-29', '1900-02-29', '2026-02-30', '2026-04-31', '2026-13-01', '2026-00-10', '2026-01-00', '0000-01-01', '2026-1-01', '20261127', null, 20261127]) assert.equal(isDateStr(bad), false, String(bad));
+  const tx = { type: 'expense', amount: 1000, category: '식비', memo: '', date: '2026-02-30' };
+  assert.equal(vt(tx), false);
+  assert.equal(vt({ ...tx, date: '2026-02-28' }), true);
+  const item = { name: '우유', qty: 1, price: 0, category: '식비', memberId: null, memo: '', checked: false, status: 'bought', paid: 1000, txId: null, boughtAt: '2026-06-31' };
+  assert.equal(vi(item), false);
+  assert.equal(vi({ ...item, boughtAt: '2026-06-30' }), true);
+  console.log('date validation tests: all passed');
+}

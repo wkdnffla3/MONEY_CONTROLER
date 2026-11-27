@@ -254,6 +254,14 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
       setStatus('error');
       return;
     }
+    // 설정만 못 받은 경우(네트워크 끊김·시간 초과 등): 빈 설정(예산 0, 즐겨찾기·반복 내역 없음)으로 화면과
+    // 기기 캐시를 덮지 않고 지금 상태를 유지. 다음 불러오기(화면 복귀·실시간·재연결)에 다시 받음
+    if (stRes?.error) {
+      if (isRetryable(stRes.error)) { setStatus((s) => (s === 'loading' ? 'ok' : s)); return; }
+      setError(stRes.error);
+      setStatus('error');
+      return;
+    }
     legacyRef.current = txLevel;
     // 아직 실행하지 않은 DB 업데이트 중 가장 앞 번호 (예: '006')
     const need = [
@@ -638,6 +646,10 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
   // ---- 저장 동작 (화면에서 호출) ----
   /** 작업을 목록에 넣고 전송을 시도. 결과: { synced } — 서버까지 올라갔으면 true */
   const enqueue = useCallback(async (op0) => {
+    // 형식이 틀린 작업은 보관 목록을 다시 읽을 때 걸러져 조용히 사라짐 → "저장됨"으로 알리지 않게 넣기 전에 막음
+    if (!isValidOp(op0)) {
+      throw Object.assign(new Error('저장할 수 없는 값이 있어요. 입력값을 확인해 주세요.'), { code: 'invalid_op' });
+    }
     const q0 = getQ();
     // 창을 열 때 본 버전(base)이 그 뒤 내 저장으로 바뀌었으면 따라감
     if (op0.base !== undefined) {

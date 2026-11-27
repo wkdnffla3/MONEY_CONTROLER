@@ -102,9 +102,9 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 리포트 펼쳐 보기 | `yearReport`의 묶음(categories·byMember·byTag·byCard)마다 `items`(큰 금액 순 지출 내역), 전체 지출 `expenses`(큰 순). `ReportPage`의 `ShareList` 줄을 누르면 `ItemList`(10개씩 더 보기), 내역 → `onOpenTx`(수정 화면) |
 | 댓글 쓴 사람 이름 | `author_name`은 클라이언트가 보낸 값이라 믿지 않는다. 화면(`App.commentAuthor`)·앱 안 배너·푸시(push-notify가 `ledger_members.person_id`로 조회) 모두 공유 참여자는 계정에 연결된 사람 이름(없으면 이메일 앞부분/"참여자"), 가계부 주인만 보낸 이름 |
 | 서비스 워커 정리 | `syncAssets`: 새 index.html을 받으면 필요한 빌드 파일을 모두 확보한 뒤에만 나머지 `/assets/` 캐시를 지움(sw.js가 안 바뀌어 재설치되지 않으므로 여기서 정리) |
-| 보관 목록 안전장치 | `enqueueMany`는 `isValidOp`로 검사해 틀리면 `invalid_op` 오류(조용히 버리지 않음). 가계부 전환 시 `activeLedger` ref로 이전 가계부의 늦은 `updateServer`·`load` 결과를 무시, 반복 자동 등록은 `loadedFor === userId`일 때만 |
+| 보관 목록 안전장치 | `enqueue`·`enqueueMany`는 `isValidOp`로 검사해 틀리면 `invalid_op` 오류(조용히 버리지 않음). 가계부 전환 시 `activeLedger` ref로 이전 가계부의 늦은 `updateServer`·`load` 결과를 무시, 반복 자동 등록은 `loadedFor === userId`일 때만  설정을 못 받은 불러오기(`stRes.error`)는 빈 설정으로 덮지 않고 현재 상태 유지 |
 | 화면 테마 | `lib/theme.js`: 기기별 localStorage `ledger.theme`(system·light·dark, 서버에 안 보냄, 잘못된 값은 system). `main.jsx`가 첫 그리기 전에 `<html data-theme>` 적용 + 다른 탭 변경 따라감. CSS는 어두운 색 변수를 `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`와 `:root[data-theme="dark"]` 두 곳에 같은 값으로 둠(바꿀 때 둘 다). 강조색 위 글자는 `--on-accent`. 설정 메뉴 맨 위 `.theme-row` |
-| 구독 자동 발견 | 3달 이상 연속, 한 달 1회, 금액 차 10% 이내, 날짜 차 6일 이내, 마지막이 이번 달·지난달. 등록하면 `last`=이번 달이라 다음 달부터 자동 기록. 무시 목록은 공유 설정(`dismissed_subs`) |
+| 구독 자동 발견 | 3달 이상 연속, 한 달 1회, 금액 차 10% 이내, 날짜 차 6일 이내, 마지막이 이번 달·지난달. 등록하면 `last`=마지막 결제 달(`ruleFromSuggestion`), 안내 문구는 `suggestionStartText`(이번 달 몫이 바로 기록되는지). 무시 목록은 공유 설정(`dismissed_subs`) |
 
 ### 4.4 전체 백업·복원
 - 백업 파일(JSON, `format: 'ledger-backup'`, `version: 1`)은 이 기기 화면 기준(보관 목록 반영) 내역·장보기·설정 전체. 계정 ID는 넣지 않고 가계부 ID만. 댓글·변경 기록은 제외. 형식을 바꾸면 `version`을 올리고 `parseBackup`이 예전 버전도 읽게 한다.

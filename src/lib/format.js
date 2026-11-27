@@ -28,3 +28,12 @@ export function sumByType(list) {
   }
   return { inc, exp };
 }
+
+/**
+ * 글자 수(UTF-16 단위)로 자르되 이모지를 반으로 자르지 않음.
+ * 반쪽 이모지(짝 없는 서로게이트)는 서버(Postgres)가 거절해서 저장이 통째로 실패함
+ */
+export function clipText(s, max) {
+  const t = String(s ?? '').slice(0, max);
+  return /[\uD800-\uDBFF]$/.test(t) ? t.slice(0, -1) : t;
+}
