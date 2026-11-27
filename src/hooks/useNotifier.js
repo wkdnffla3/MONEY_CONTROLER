@@ -19,7 +19,14 @@ export function useNotifier(uid, members) {
   membersRef.current = members;
   const timers = useRef(new Map());
 
-  useEffect(() => { setPrefsState(uid ? getPrefs(uid) : null); }, [uid]);
+  useEffect(() => {
+    setPrefsState(uid ? getPrefs(uid) : null);
+    if (!uid) return undefined;
+    // 다른 탭에서 알림 설정을 바꾸면 이 탭도 따라감 (꺼 둔 종류의 배너가 계속 뜨지 않게)
+    const onStorage = (e) => { if (e.key === null || e.key === `ledger.notify.${uid}`) setPrefsState(getPrefs(uid)); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [uid]);
   const refreshPush = useCallback(() => { hasPushSubscription().then((v) => { pushOn.current = v; }, () => {}); }, []);
   // 로그인한 계정이 바뀌면: 남의 계정 구독이 이 브라우저에 남아 있으면 정리한 뒤 상태 확인
   useEffect(() => {

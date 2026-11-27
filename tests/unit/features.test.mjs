@@ -234,3 +234,14 @@ console.log('upcoming ok');
   assert.ok(!/[\uD800-\uDBFF]$/.test(tag) && isValidTags([tag]));
   console.log('clip text tests: all passed');
 }
+
+// 오류 안내: 앱이 만든 한국어 오류는 그대로, DB 제약 위반은 할 일 안내, 모르는 오류는 원문과 함께
+{
+  const { koError } = await import('../../src/lib/errors.js');
+  assert.equal(koError(Object.assign(new Error('저장할 수 없는 값이 있어요. 입력값을 확인해 주세요.'), { code: 'invalid_op' })), '저장할 수 없는 값이 있어요. 입력값을 확인해 주세요.');
+  assert.equal(koError({ code: '23514', message: 'new row for relation "transactions" violates check constraint "transactions_memo_len"' }), '저장할 수 없는 값이 있어요. 글자 수·금액을 확인해 주세요.');
+  assert.equal(koError({ code: '22008', message: 'date/time field value out of range: "2026-02-30"' }), '형식이 맞지 않는 값이 있어요. 날짜·금액을 확인해 주세요.');
+  assert.equal(koError(new Error('Failed to fetch')), '서버에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.');
+  assert.equal(koError(new Error('boom')), '문제가 생겼어요: boom');
+  console.log('error text tests: all passed');
+}

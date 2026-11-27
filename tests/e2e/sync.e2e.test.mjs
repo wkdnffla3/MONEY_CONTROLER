@@ -61,6 +61,21 @@ describe('오프라인과 재전송', () => {
     assert.deepEqual(await memos(page), ['택시']);
     await ctx.close();
   });
+
+  test('삭제 후 새 입력 창을 연 채 "되돌리기" → 입력 창은 그대로, 내역은 복구', async () => {
+    const { ctx, page } = await open(env, { path: '#list', seed: seedScript({ transactions: [tx('t1', { memo: '택시' })] }) });
+    await page.click('.tx:has-text("택시")');
+    await page.waitForSelector('.sheet');
+    await page.click('.sheet .btn.danger');
+    await page.waitForTimeout(400);
+    await page.click('button.fab');
+    await page.fill('.sheet .amount-input input', '5000');
+    await page.click('.toast button');
+    await page.waitForTimeout(700);
+    assert.equal(await page.locator('.sheet .amount-input input').inputValue(), '5,000');
+    assert.deepEqual(await memos(page), ['택시']);
+    await ctx.close();
+  });
 });
 
 describe('카테고리 이름 변경', () => {

@@ -189,7 +189,7 @@ Supabase(PostgREST)는 한 번에 최대 1,000줄만 돌려주고 오류를 내�
 - `hooks/useAppUpdate.js`: 서버 `/`(index.html)를 `x-update-check` 헤더로 받아 메인 빌드 파일(`/assets/...`) 이름을 지금 문서와 비교 → 다르면 `.update-bar`. 화면 복귀(5분 간격 제한)·30분마다·시작 1분 뒤. 개발 서버(빌드 파일 없음)에선 꺼짐
 - 장보기 결제: `PurchaseConfirm` 결제 카드 칩 → `planPurchase(opts.cardId)` → 내역 `cardId`, `inst: 1`. 마지막 카드 `localStorage['ledger.shopCard']`
 - 반복 규칙 선택 칸 `cardId`(지출만, 일시불)·`tags` (`isValidRecurring`). `planRecurring`이 내역에 넣음, `ruleFromTx`·`ruleFromSuggestion`이 이어감. DB 변경 없음(설정 jsonb)
-- 시트 입력 보호: `<Sheet guard>`(입력 양식 시트). 입력이 생긴 `form`을 기억 → 바깥·Esc·✕·뒤로 가기(`sheetGuard.blocked`, App popstate)면 `.leave-ask` 확인. submit하면 그 양식은 빠지고, 취소로 양식이 사라지면(isConnected) 입력 중 아님
+- 시트 입력 보호: `<Sheet guard>`(입력 양식 시트). 입력이 생긴 `form`을 기억 → 바깥·Esc·✕·뒤로 가기(`sheetGuard.blocked`, App popstate)면 `.leave-ask` 확인. submit하면 그 양식은 빠지고(제출 뒤 양식의 `.err`에 검사 오류가 보이면 다시 입력 중), 취소로 양식이 사라지면(isConnected) 입력 중 아님
 - 목록 설정 삭제 되돌리기: `onSave(list, msg, { item, index })` → App `withUndo(kind)`가 알림에 되돌리기(최신 목록의 원래 자리에 다시 넣음). 반복 내역·즐겨찾기
 - 예산 카드 `planned`: `upcomingThisMonth(rules, today)`(이번 달 남은 날의 활성 반복 지출) 합계를 미리 뺌. 카테고리별 예산은 카테고리별 합계
 - '공동' 묶음 즐겨찾기(사람 없음·지운 사람)는 공동(null)으로 기록. 장보기 빠른 추가는 같은 이름(normalizeName)의 살 것이 있으면 수량 +1

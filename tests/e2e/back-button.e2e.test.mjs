@@ -67,6 +67,21 @@ test('수정 중인 내역이 다른 기기에서 지워지면 시트를 닫고 
 });
 
 describe('입력하다 닫을 때 확인', () => {
+  test('메모만 쓰고 저장을 눌러 "금액을 입력해 주세요"가 뜬 뒤 바깥을 눌러도 물어봄', async () => {
+    const { ctx, page, errs } = await open(env, { path: '#list' });
+    await page.click('button.fab');
+    await page.fill('.sheet input[id$="-memo"]', '점심 메모');
+    await page.click('.sheet button[type="submit"]');
+    await page.waitForTimeout(100);
+    assert.match(await page.innerText('.sheet .err'), /금액/);
+    await page.mouse.click(5, 5); // 바깥
+    assert.equal(await page.locator('.leave-ask').count(), 1);
+    await page.click('.leave-ask button:has-text("계속 입력")');
+    assert.equal(await page.locator('.sheet input[id$="-memo"]').inputValue(), '점심 메모');
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
   test('금액을 입력한 채 바깥·Esc·뒤로 가기 → 닫지 않고 물어봄, "계속 입력"하면 그대로', async () => {
     const { ctx, page, errs } = await open(env, { path: '#list' });
     await page.click('button.fab');

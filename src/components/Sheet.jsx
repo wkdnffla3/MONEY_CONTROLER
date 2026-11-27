@@ -54,7 +54,12 @@ export default function Sheet({ title, onClose, children, guard = false }) {
       onClick={(e) => { if (e.target === e.currentTarget) tryClose(); }}
     >
       <div className="sheet" onInput={(e) => { dirty.current.add(e.target.closest('form') || e.currentTarget); }}
-        onSubmitCapture={(e) => { dirty.current.delete(e.target); }}>
+        onSubmitCapture={(e) => {
+          const form = e.target;
+          dirty.current.delete(form);
+          // 저장을 눌렀지만 검사에 걸려(금액 비움 등) 오류가 보이면 아직 입력 중 → 바깥을 눌러도 다시 물어봄
+          setTimeout(() => { if (form.isConnected && form.querySelector('.err')?.textContent.trim()) dirty.current.add(form); }, 0);
+        }}>
         <div className="grab" />
         <h3>
           <span>{title}</span>
