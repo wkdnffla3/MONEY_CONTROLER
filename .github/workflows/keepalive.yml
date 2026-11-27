@@ -1,0 +1,42 @@
+# Supabase 무료 요금제 일시정지 방지
+# 무료 프로젝트는 7일 동안 DB 활동이 적으면 일시정지돼요. 3일마다 아주 작은 조회를 한 번 보내 활동을 만들어요.
+# - 공개용 anon 키만 씀 (앱에도 들어 있는 키). 로그인하지 않은 요청이라 RLS 때문에 데이터는 돌아오지 않고 조회만 실행됨
+# - service_role 키는 절대 넣지 마세요
+# 설정: 저장소 → Settings → Secrets and variables → Actions → New repository secret
+#   SUPABASE_URL      = Vercel 의 VITE_SUPABASE_URL 과 같은 값 (https://프로젝트ID.supabase.co)
+#   SUPABASE_ANON_KEY = Vercel 의 VITE_SUPABASE_ANON_KEY 와 같은 값
+# 확인: Actions 탭 → keepalive → Run workflow 로 바로 실행해 볼 수 있어요 (초록색 ✓ 이면 성공)
+name: keepalive
+
+on:
+  schedule:
+    - cron: '0 0 */3 * *'   # 3일마다, UTC 0시 = 한국 오전 9시 (GitHub 사정으로 몇 시간 늦어질 수 있음)
+  workflow_dispatch:         # Actions 화면에서 직접 실행
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Supabase DB 조회 한 번
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_ANON_KEY 비밀 값을 저장소 Settings → Secrets and variables → Actions 에 등록해 주세요"
+            exit 1
+          fi
+          # 실패하면(서버가 멈췄거나 주소가 틀림) 이 작업이 빨간색이 되고 GitHub 가 메일로 알려줌
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --retry 3 --retry-delay 10 \
+            "${SUPABASE_URL%/}/rest/v1/transactions?select=id&limit=1" \
+            -H "apikey: $SUPABASE_ANON_KEY" \
+            -H "Authorization: Bearer $SUPABASE_ANON_KEY")
+          echo "응답 코드: $code"
+          if [ "$code" != "200" ]; then
+            echo "::error::Supabase 응답이 $code 예요. 프로젝트가 일시정지됐다면 대시보드에서 Resume project 를 눌러 주세요"
+            exit 1
+          fi

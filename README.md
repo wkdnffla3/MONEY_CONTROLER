@@ -356,6 +356,20 @@ npm run test:all       # 단위 + Edge Function + 브라우저 + SQL (준비: te
 
 실제 Supabase 없이 가짜 Supabase(브라우저)와 로컬 Postgres(SQL)로 돌아가요. GitHub에 push하면 Actions가 자동으로 실행해요. 자세한 방법은 `tests/README.md`.
 
+## 일시정지 방지 (GitHub Actions)
+
+Supabase 무료 프로젝트는 7일 동안 DB 활동이 적으면 일시정지돼요. `.github/workflows/keepalive.yml`이 3일마다 아주 작은 조회를 한 번 보내 이를 막아요.
+
+설정 (한 번만):
+1. GitHub 저장소 → **Settings → Secrets and variables → Actions → New repository secret**
+2. `SUPABASE_URL` = Vercel 환경 변수 `VITE_SUPABASE_URL`과 같은 값
+3. `SUPABASE_ANON_KEY` = Vercel 환경 변수 `VITE_SUPABASE_ANON_KEY`와 같은 값 (공개용 키. **service_role 키는 절대 넣지 마세요**)
+4. **Actions → keepalive → Run workflow**로 바로 실행해 보고 초록색 ✓인지 확인
+
+- 로그인하지 않은 요청이라 보안 규칙(RLS) 때문에 데이터는 돌아오지 않고 조회만 실행돼요.
+- 실패하면(프로젝트가 이미 멈췄거나 값이 틀림) 빨간색이 되고 GitHub가 메일로 알려줘요. 이미 멈췄다면 Supabase 대시보드에서 **Resume project**.
+- 저장소에 오래(약 60일) 커밋이 없으면 GitHub가 예약 실행을 끌 수 있어요. 그때는 Actions 화면의 안내에 따라 다시 켜요.
+
 ## 동시에 고칠 때 (017)
 
 두 사람(또는 두 기기)이 같은 내역·장보기 물품·설정을 거의 동시에 고치면, 나중에 저장한 쪽이 먼저 고친 내용을 모르고 덮어쓸 수 있어요. `supabase/017_versions.sql`을 실행하면 서버가 내역·물품·설정 칸마다 버전 번호를 매기고, 앱은 "내가 본 버전"을 함께 보내요.
@@ -396,6 +410,10 @@ npm run test:all       # 단위 + Edge Function + 브라우저 + SQL (준비: te
 최신이 위에 있어요. 바뀔 때마다 여기에 추가합니다. **할 일**에 적힌 SQL 파일은 Supabase SQL Editor에서 번호 순서대로 한 번씩 실행하면 돼요(여러 번 실행해도 안전). 적힌 게 없으면 GitHub에 push만 하면 Vercel이 자동으로 배포해요.
 
 > 11월 13일 이전 기록은 DB 업데이트 파일과 개발 대화를 바탕으로 나중에 정리한 거라, 날짜는 대략이에요.
+
+### 2026-11-27
+- **추가** Supabase 무료 프로젝트 일시정지 방지: GitHub Actions가 3일마다 DB를 한 번 조회 (`.github/workflows/keepalive.yml`)
+- **할 일** GitHub 저장소 Secrets에 `SUPABASE_URL`·`SUPABASE_ANON_KEY` 등록 후 Actions → keepalive → Run workflow로 확인
 
 ### 2026-11-26
 - **수정** 변경 기록에서 카드 없는 결제를 '현금·체크'로 보여 다른 화면('현금·기타')과 이름이 달랐던 문제
