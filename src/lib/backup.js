@@ -4,6 +4,7 @@
 //  - 댓글·변경 기록은 포함하지 않음
 import { isValidItem, isValidTx, SETTINGS } from './outbox.js';
 import { DEFAULT_CATEGORIES } from './categories.js';
+import { sameJson } from './merge.js';
 
 export const BACKUP_FORMAT = 'ledger-backup';
 export const BACKUP_VERSION = 1;
@@ -111,7 +112,6 @@ function hashId(s) {
   }
   return `rb-${a.toString(36)}${b.toString(36)}`;
 }
-const sameJson = (x, y) => JSON.stringify(x) === JSON.stringify(y);
 
 /**
  * 복원 계획: 지금 화면(current) 과 비교해서 보낼 줄과 미리 보기 숫자.

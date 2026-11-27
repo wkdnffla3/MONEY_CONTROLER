@@ -172,3 +172,19 @@ console.log('notify unit tests: all passed');
   assert.equal(shouldSend('comment', { comment: false }), false);
   console.log('comment unit tests: all passed');
 }
+
+// 웹 푸시 topic: 32자 안, 허용 글자만, 태그가 다르면 topic 도 다름 (긴 태그를 잘라서 합쳐지지 않게)
+{
+  const { pushTopic } = await import('../../supabase/functions/_shared/notifyMessage.js');
+  const ok = (t) => assert.match(t, /^[A-Za-z0-9_-]{1,32}$/);
+  assert.equal(pushTopic('tx-abc'), 'tx-abc');
+  assert.equal(pushTopic('weekly-2026-11-17'), 'weekly-2026-11-17');
+  const m = '3f2b8c1e-9a7d-4e21-b6c0-5d8e7f9a1b2c';
+  const a = pushTopic(`purchase-2026-11-27-${m}-29384756`);
+  const b = pushTopic(`purchase-2026-11-27-${m}-29384790`);
+  ok(a); ok(b);
+  assert.notEqual(a, b); // 같은 사람·같은 날이라도 다른 결제(다른 분)는 따로
+  assert.equal(a, pushTopic(`purchase-2026-11-27-${m}-29384756`)); // 같은 결제는 같은 topic
+  ok(pushTopic('한글만')); ok(pushTopic('')); ok(pushTopic(null));
+  console.log('push topic tests: all passed');
+}

@@ -47,3 +47,21 @@ assert.equal(mergeSetting('budget', 1, 2, 3).ok, false);
 assert.equal(mergeSetting('favorites', undefined, [], []).ok, false); // 본 값을 모름
 assert.deepEqual(mergeSetting('favorites', [], [f('a')], [f('a')]), { ok: true, value: [f('a')] });
 console.log('merge unit tests: all passed');
+
+// 키 순서만 다른 같은 내용 (서버 jsonb 는 키 순서를 바꿔 돌려줌) → 같은 것으로 봄
+{
+  const { sameJson } = await import('../../src/lib/merge.js');
+  assert.equal(sameJson({ id: 'a', label: 'x', tags: ['t'] }, { tags: ['t'], label: 'x', id: 'a' }), true);
+  assert.equal(sameJson([{ a: 1, b: { c: 2, d: 3 } }], [{ b: { d: 3, c: 2 }, a: 1 }]), true);
+  assert.equal(sameJson(undefined, null), true);
+  assert.equal(sameJson({ a: 1 }, { a: 2 }), false);
+  assert.equal(sameJson([1, 2], [2, 1]), false); // 배열 순서는 그대로 따짐
+  // 내가 추가한 항목이 서버에 키 순서만 바뀌어 있음 → 충돌 아님
+  const mine = [f('a'), { id: 'm', label: 'm', amount: 500 }];
+  const theirs = [f('a'), { amount: 500, label: 'm', id: 'm' }];
+  assert.deepEqual(mergeSetting('favorites', [f('a')], mine, theirs).ok, true);
+  // 내가 지운 항목: 서버 쪽은 키 순서만 다름(안 고침) → 지울 수 있음
+  r = mergeList([f('a'), f('b')], [f('a')], [f('a'), { amount: 1000, label: 'b', id: 'b' }]);
+  assert.deepEqual(r, { ok: true, value: [f('a')] });
+  console.log('merge key-order tests: all passed');
+}

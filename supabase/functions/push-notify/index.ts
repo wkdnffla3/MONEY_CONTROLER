@@ -10,7 +10,7 @@
 // 배포: supabase functions deploy push-notify --no-verify-jwt   (대신 WEBHOOK_SECRET 헤더로 확인)
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { buildNotification, buildReport, reportRange, shouldSend, isPushEndpoint } from '../_shared/notifyMessage.js';
+import { buildNotification, buildReport, reportRange, shouldSend, isPushEndpoint, pushTopic } from '../_shared/notifyMessage.js';
 
 const env = (k: string) => (Deno.env.get(k) || '').trim();
 const VAPID_PUBLIC_KEY = env('VAPID_PUBLIC_KEY');
@@ -103,7 +103,7 @@ async function pushTo(subs: Sub[], note: Note, exclude: (s: Sub) => boolean = ()
       await webpush.sendNotification(
         { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
         message,
-        { TTL: 60 * 60, urgency: 'normal', topic: note.tag.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32) },
+        { TTL: 60 * 60, urgency: 'normal', topic: pushTopic(note.tag) },
       );
       sent += 1;
     } catch (e) {

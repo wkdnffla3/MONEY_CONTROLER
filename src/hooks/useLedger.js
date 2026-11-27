@@ -10,7 +10,7 @@ import { useOnline } from './useOnline';
 import { getDeviceId, isOwn, markOwn } from '../lib/device';
 import { isMissingFn } from '../lib/household';
 import { fetchAll } from '../lib/fetchAll';
-import { canMerge, mergeSetting } from '../lib/merge';
+import { canMerge, mergeSetting, sameJson } from '../lib/merge';
 
 export { newId };
 
@@ -104,8 +104,8 @@ const isVersionConflict = (e) => !!e && (String(e.code) === 'LV409' || /version_
 const TX_SAME_KEYS = ['type', 'amount', 'category', 'memo', 'date', 'member_id', 'tags', 'card_id', 'inst_months', 'created_at'];
 const ITEM_SAME_KEYS = ['name', 'qty', 'price', 'category', 'member_id', 'memo', 'checked', 'status', 'paid', 'tx_id', 'bought_at', 'created_at'];
 const norm = (v) => (v === undefined ? null : typeof v === 'number' ? v : (typeof v === 'string' && /^-?\d+$/.test(v) ? Number(v) : v));
-const sameRow = (a, b, keys) => keys.every((k) => !(k in b) || JSON.stringify(norm(a[k])) === JSON.stringify(norm(b[k])));
-const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const sameRow = (a, b, keys) => keys.every((k) => !(k in b) || sameJson(norm(a[k]), norm(b[k])));
+const sameValue = sameJson; // 키 순서 무시 (서버 jsonb 는 키 순서를 바꿔 돌려줌)
 
 // 같은 대상(같은 내역 ID, 또는 예산)에 대한 작업이 아직 목록에 남아 있는지
 const hasPendingFor = (queue, op) => queue.some((o) => sameTarget(o, op));

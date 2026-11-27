@@ -1,6 +1,7 @@
 // 변경 기록 읽기와 화면용 문장 만들기 (기록은 DB 트리거가 남김 — supabase/010_history_comments.sql)
 import { supabase } from './supabase';
 import { won } from './format';
+import { sameJson } from './merge.js';
 
 export const PAGE = 40;
 export async function fetchActivity(ledgerId, before) {
@@ -24,7 +25,7 @@ const TX_FIELDS = [
 ];
 const ITEM_FIELDS = [['name', '이름'], ['qty', '수량'], ['price', '예상 단가', (v) => won(Number(v) || 0)], ['category', '카테고리'], ['memo', '메모', (v) => v || '(없음)']];
 
-const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+const same = sameJson; // 키 순서 무시 (jsonb 는 키 순서가 바뀜)
 
 /**
  * 기록 한 줄 → 화면 문장. 장보기 "담기/빼기"처럼 사소한 바뀜은 null (목록에서 숨김)
