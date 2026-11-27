@@ -89,6 +89,17 @@ console.log('ok 5. 주간 리포트: 가계부별 계산, 끈 기기·내역 없
 r = await call({ type: 'REPORT', period: 'month' });
 assert.equal(r.status, 200);
 console.log('ok 6. 월간 리포트 호출 →', JSON.stringify({ ...r.body, range: r.body.range.cur }));
+{
+  // 내역이 1000건을 넘어도 리포트 합계가 잘리지 않음 (지난주 1500건 × 100원)
+  const before = db.transactions.length;
+  for (let i = 0; i < 1500; i++) db.transactions.push({ id: `big${String(i).padStart(5, '0')}`, user_id: L, type: 'expense', amount: 100, category: '간식', date: d(4) });
+  sent.length = 0;
+  const rb = await call({ type: 'REPORT', period: 'week' });
+  assert.equal(rb.status, 200);
+  assert.equal(sent[0].msg.title, '지난주 지출 190,000원'); // 40,000 + 150,000
+  db.transactions.length = before;
+  console.log('ok 6b. 내역 1000건 넘어도 리포트 합계 전부');
+}
 assert.equal((await call({ type: 'REPORT', period: 'year' })).status, 400);
 console.log('ok 7. 잘못된 period → 400');
 assert.deepEqual(globalThis.__vapid, ['mailto:a@b.c', 'pub', 'priv']);

@@ -120,14 +120,26 @@ async function pushTo(subs: Sub[], note: Note, exclude: (s: Sub) => boolean = ()
   return { sent, skipped, removed };
 }
 
+// Supabase 는 한 번에 최대 1000줄만 돌려줌(넘으면 말없이 잘림) → 1000줄씩 나눠 모두 받기
+// (내역이 많은 가계부의 월간 리포트가 덜 더해지거나, 구독 기기가 많으면 일부만 받는 일 방지)
+async function fetchAllRows<T>(build: () => any): Promise<{ data: T[] | null; error: { message: string } | null }> {
+  const out: T[] = [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await build().order('id').range(from, from + 999);
+    if (error) return { data: null, error };
+    out.push(...((data || []) as T[]));
+    if (!data || data.length < 1000) return { data: out, error: null };
+  }
+}
+
 // 주간·월간 리포트: 리포트를 받겠다는 기기가 있는 가계부만 계산
 async function sendReports(period?: string) {
   if (period !== 'week' && period !== 'month') return json(400, { error: 'period must be week or month' });
   const kind = period === 'week' ? 'weekly' : 'monthly';
   const range = reportRange(period, new Date(), 'Asia/Seoul');
-  const { data: subs, error } = await admin
+  const { data: subs, error } = await fetchAllRows<Sub>(() => admin
     .from('push_subscriptions')
-    .select('id, user_id, device_id, endpoint, p256dh, auth, prefs');
+    .select('id, user_id, device_id, endpoint, p256dh, auth, prefs'));
   if (error) return json(500, { error: error.message });
 
   const byLedger = new Map<string, Sub[]>();
@@ -138,12 +150,12 @@ async function sendReports(period?: string) {
 
   const total = { ledgers: 0, sent: 0, skipped: 0, removed: 0, empty: 0 };
   for (const [ledgerId, list] of byLedger) {
-    const { data: txs, error: e1 } = await admin
+    const { data: txs, error: e1 } = await fetchAllRows<{ type: string; amount: number; category: string; date: string }>(() => admin
       .from('transactions')
       .select('type, amount, category, date')
       .eq('user_id', ledgerId)
       .gte('date', range.prev.start)
-      .lte('date', range.cur.end);
+      .lte('date', range.cur.end));
     if (e1) { console.error('report tx load failed', ledgerId, e1.message); continue; }
     let budget = 0;
     if (period === 'month') {

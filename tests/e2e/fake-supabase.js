@@ -145,6 +145,11 @@ export function createClient(){ return {
   auth:{ getSession:async()=>({data:{session}}), onAuthStateChange:(cb)=>{subs.add(cb);return {data:{subscription:{unsubscribe(){subs.delete(cb)}}}}},
     signOut:async()=>{ session=null; sessionStorage.setItem('__signedOut','1'); subs.forEach(cb=>cb('SIGNED_OUT',null)); } },
   rpc:(fn,args={})=>exec(db=>{ if(LV()!==0) return noFn(fn); const f=RPC[fn]; return f?f(db,args):noFn(fn); }, fn!=='my_ledger'&&fn!=='peek_invite'),
-  from:q, channel(){const c={on(ev,f,h){ (window.__rtH=window.__rtH||[]).push([f.table,h]); return c},subscribe(){return c}};return c}, removeChannel(){ window.__rtH=[]; } }; }
+  from:q, channel(){const c={on(ev,f,h){ (window.__rtH=window.__rtH||[]).push([f.table,h,f]); return c},subscribe(){return c}};return c}, removeChannel(){ window.__rtH=[]; } }; }
 // 테스트에서 실시간 이벤트 흉내: window.__rt('transactions', {eventType:'INSERT', new:{...}})
-window.__rt=(table,payload)=>{ for(const [t,h] of (window.__rtH||[])) if(t===table) h(payload); };
+// 실제 Supabase처럼: 삭제 이벤트는 기본 키만 실려서 필터(user_id=eq...) 붙은 구독엔 오지 않음, event 종류도 맞아야 함
+window.__rt=(table,payload)=>{ for(const [t,h,f] of (window.__rtH||[])) {
+  if(t!==table) continue; const ev=payload.eventType||'INSERT';
+  if(f&&f.event&&f.event!=='*'&&f.event!==ev) continue;
+  if(f&&f.filter&&ev==='DELETE') continue;
+  h(payload); } };

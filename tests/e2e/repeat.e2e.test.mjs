@@ -324,3 +324,22 @@ test('이번 달 자동 기록을 다음 달 날짜로 옮겨 두면, 다음 달
   assert.deepEqual(errs, []);
   await ctx.close();
 });
+
+test('반복 내역 추가: 시작 월을 지난달 이전으로 고르면 몇 개월이 한꺼번에 기록되는지 미리 알림', async () => {
+  const { menu } = await import('./helpers.mjs');
+  const { ctx, page, errs } = await open(env, { contextOptions: KST, beforeGoto: (p) => p.clock.install({ time: new Date('2026-11-18T10:00:00+09:00') }) });
+  await menu(page, '반복 내역');
+  await page.click('.sheet button:has-text("+ 반복 내역 추가")');
+  await page.fill('#rr-amt', '10000');
+  await page.selectOption('#rr-day', '25');
+  await page.fill('#rr-start', '2026-08');
+  assert.match(norm(await page.innerText('.sheet .warn-text')), /8월~10월 3개월 내역이 바로 기록돼요/);
+  await page.fill('#rr-start', '2026-11');
+  assert.equal(await page.locator('.sheet .warn-text').count(), 0); // 이번 달 25일은 아직
+  await page.fill('#rr-start', '2026-08');
+  await page.click('.sheet button[type="submit"]');
+  await page.waitForTimeout(1200);
+  assert.equal((await db(page)).transactions.length, 3);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});

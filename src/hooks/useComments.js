@@ -37,14 +37,17 @@ export function useComments(ledgerId, uid, { onRemote } = {}) {
         if (p?.eventType === 'INSERT' && p.new?.id) {
           setList((l) => (l.some((c) => c.id === p.new.id) ? l : [...l, p.new].sort(sortByTime)));
           if (p.new.author !== uid) { try { onRemoteRef.current?.({ table: 'tx_comments', type: 'INSERT', record: p.new }); } catch { /* 무시 */ } }
-        } else if (p?.eventType === 'DELETE' && p.old?.id) {
-          setList((l) => l.filter((c) => c.id !== p.old.id));
         }
+      })
+      // 삭제 알림은 id만 실려 와서 user_id 필터 구독엔 오지 않음(Supabase 제한) → 삭제만 필터 없이 따로 받아 내 목록에 있으면 뺌
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'tx_comments' }, (p) => {
+        if (p?.old?.id) setList((l) => (l.some((c) => c.id === p.old.id) ? l.filter((c) => c.id !== p.old.id) : l));
       })
       .subscribe();
     const onVisible = () => { if (!document.hidden) load(); };
     document.addEventListener('visibilitychange', onVisible);
-    return () => { supabase.removeChannel(channel); document.removeEventListener('visibilitychange', onVisible); };
+    window.addEventListener('online', onVisible); // 끊겼다 다시 연결되면 그사이 놓친 댓글도
+    return () => { supabase.removeChannel(channel); document.removeEventListener('visibilitychange', onVisible); window.removeEventListener('online', onVisible); };
   }, [ledgerId, uid, load]);
 
   const byTx = useMemo(() => {

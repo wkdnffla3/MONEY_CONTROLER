@@ -35,6 +35,15 @@ n = buildNotification({ table: 'transactions', record: tx({ id: 'shop-p1', membe
 assert.equal(n.kind, 'purchase');
 assert.equal(n.title, '준호님이 장보기 결제를 확정했어요');
 assert.equal(n.url, '/#shopping');
+// 물품별로 나누기(물품마다 내역): 같은 결제는 같은 태그 → 휴대폰에 알림 하나로
+{
+  const t0 = Date.UTC(2026, 10, 26, 3, 0, 10);
+  const a = buildNotification({ table: 'transactions', record: tx({ id: 'shop-i1', member_id: 'm2', date: '2026-11-26', created_at: t0 }), members });
+  const b = buildNotification({ table: 'transactions', record: tx({ id: 'shop-i2', member_id: 'm2', date: '2026-11-26', created_at: t0 + 1 }), members });
+  const c = buildNotification({ table: 'transactions', record: tx({ id: 'shop-i3', member_id: 'm2', date: '2026-11-26', created_at: t0 + 3600e3 }), members });
+  assert.equal(a.tag, b.tag);
+  assert.notEqual(a.tag, c.tag); // 한 시간 뒤 다른 결제는 따로
+}
 
 // 4. 장보기 물품 추가 / 구매완료 줄은 무시
 n = buildNotification({ table: 'shopping_items', record: { id: 'i1', name: '우유', qty: 2, price: 2400, status: 'todo', member_id: 'm1' }, members });

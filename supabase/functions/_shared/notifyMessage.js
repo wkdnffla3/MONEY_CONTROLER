@@ -94,7 +94,9 @@ export function buildNotification({ table, type = 'INSERT', record, members = []
         kind: 'purchase',
         title: `${who} 장보기 결제를 확정했어요`,
         body: `${clip(record.category, 12)} ${won(record.amount)}${memo ? ` · ${memo}` : ''}`,
-        tag: `purchase-${record.id}`,
+        // 물품별로 나누기는 물품마다 내역이 하나씩 생김 → 같은 결제(같은 날·같은 사람·1분 안)는 같은 태그로 묶어
+        // 휴대폰에 알림이 10개 쌓이지 않고 하나로 바뀌게 (웹 푸시 topic 도 같아서 못 받은 건 하나로 합쳐짐)
+        tag: `purchase-${record.date || ''}-${record.member_id || 'all'}-${Math.floor((Number(record.created_at) || 0) / 60000)}`,
         url: '/#shopping',
       };
     }

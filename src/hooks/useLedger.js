@@ -572,11 +572,19 @@ export function useLedger(userId, { onRemote, accountId, onForbidden, onConflict
       const n = remoteInsert(table, payload);
       if (n) { try { onRemoteRef.current?.(n); } catch { /* 알림 실패가 동기화를 막지 않게 */ } }
     };
+    const onDelete = (key) => (payload) => {
+      const id = payload?.old?.id;
+      if (id && serverRef.current[key]?.[id]) scheduleLoad();
+    };
     const channel = supabase
       .channel(`ledger-${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions', filter }, onChange('transactions'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'settings', filter }, scheduleLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'shopping_items', filter }, onChange('shopping_items'))
+      // 삭제 알림은 기본 키(id)만 실려 와서 user_id 필터로 걸러지지 않음(Supabase 제한) → 다른 기기에서 지운 게
+      // 실시간으로 안 사라졌음. 필터 없이 삭제만 따로 받고, 이 가계부에 있는 줄일 때만 다시 불러옴
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'transactions' }, onDelete('tx'))
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'shopping_items' }, onDelete('items'))
       .subscribe();
 
     const onVisible = () => {
