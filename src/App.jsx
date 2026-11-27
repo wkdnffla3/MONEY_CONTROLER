@@ -809,7 +809,7 @@ export default function App() {
       )}
       {sheet?.kind === 'recurring' && (
         <Sheet title="반복 내역" onClose={closeSheet} guard>
-          <RecurringManager rules={ledger.recurring} members={members} onSave={saveRecurring} />
+          <RecurringManager rules={ledger.recurring} members={members} meId={meId} onSave={saveRecurring} />
         </Sheet>
       )}
       {sheet?.kind === 'categories' && (

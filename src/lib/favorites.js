@@ -1,22 +1,13 @@
 // 즐겨찾기를 사람별로 나누기 (즐겨찾기의 "누가" 칸 기준)
-import { findMember, memberColor, SHARED_LABEL } from './members.js';
+import { findMember, groupByMember, SHARED } from './members.js';
 
-export const FAV_SHARED = 'shared';
+export const FAV_SHARED = SHARED; // 'shared'
 
 /**
  * [{ key, label, color, items }] — 이 기기를 쓰는 사람(meId) 먼저, 그다음 사람 목록 순서, 마지막에 공동.
  * 사람을 정하지 않았거나 지워진 사람이면 공동. 빈 묶음은 뺌. 묶음 안 순서는 즐겨찾기 순서 그대로.
  */
-export function groupFavorites(favorites, members = [], meId = null) {
-  const keyOf = (f) => (findMember(members, f.memberId) ? f.memberId : FAV_SHARED);
-  const order = [...(findMember(members, meId) ? [meId] : []), ...members.map((m) => m.id).filter((id) => id !== meId), FAV_SHARED];
-  return order
-    .map((key) => {
-      const m = key === FAV_SHARED ? null : findMember(members, key);
-      return { key, label: m ? m.name : SHARED_LABEL, color: memberColor(m), isMe: !!m && key === meId, items: favorites.filter((f) => keyOf(f) === key) };
-    })
-    .filter((g) => g.items.length > 0);
-}
+export const groupFavorites = (favorites, members = [], meId = null) => groupByMember(favorites, members, meId);
 
 /** 같은 사람 묶음 안에서 한 칸 위(-1)/아래(+1)로. 전체 배열의 다른 사람 즐겨찾기 위치는 그대로 */
 export function moveInGroup(favorites, id, dir, members = []) {
