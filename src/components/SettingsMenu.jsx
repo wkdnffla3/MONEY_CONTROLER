@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { THEMES, THEME_LABELS, getTheme, saveTheme, applyTheme } from '../lib/theme';
+
 const ITEMS = [
   ['share', '🏠', '가계부 공유', '각자 계정으로 같은 가계부 쓰기'],
   ['favorites', '⭐', '즐겨찾기', '자주 쓰는 내역 한 번에 입력'],
@@ -15,8 +18,25 @@ const ITEMS = [
   ['account', '👤', '계정·개인정보', '로그인 계정 · 개인정보 처리방침 · 회원 탈퇴'],
 ];
 
+function ThemeRow() {
+  const [theme, setTheme] = useState(getTheme);
+  const pick = (t) => { setTheme(saveTheme(t)); applyTheme(t); };
+  return (
+    <div className="theme-row">
+      <span className="tt" id="theme-label"><span className="mi" aria-hidden="true">🌓</span>화면 테마</span>
+      <div className="seg mini" role="group" aria-labelledby="theme-label">
+        {THEMES.map((t) => (
+          <button key={t} type="button" aria-pressed={theme === t} onClick={() => pick(t)}>{THEME_LABELS[t]}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsMenu({ onOpen, counts = {}, shared = false, backupDue = false }) {
   return (
+    <>
+    <ThemeRow />
     <ul className="menu-list">
       {ITEMS.map(([kind, icon, title, desc]) => (
         <li key={kind}>
@@ -31,5 +51,6 @@ export default function SettingsMenu({ onOpen, counts = {}, shared = false, back
         </li>
       ))}
     </ul>
+    </>
   );
 }

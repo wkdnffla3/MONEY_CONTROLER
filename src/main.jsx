@@ -2,7 +2,12 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import { registerServiceWorker } from './lib/pwa';
+import { THEME_KEY, getTheme, applyTheme } from './lib/theme';
 import './styles.css';
+
+// 직접 고른 화면 테마를 첫 그리기 전에 적용, 다른 탭에서 바꾸면 따라감
+applyTheme(getTheme());
+window.addEventListener('storage', (e) => { if (e.key === THEME_KEY || e.key === null) applyTheme(getTheme()); });
 
 registerServiceWorker();
 
