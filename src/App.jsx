@@ -398,8 +398,11 @@ export default function App() {
     closeSheet();
     ledger.deleteTx(id, { base })
       .then(({ prev, synced }) => {
-        // 되돌리기 = 같은 ID로 다시 저장 → 서버에 두 줄이 생기지 않음
-        const undo = prev ? () => saveTx(id, prev, true) : undefined;
+        // 되돌리기 = 같은 ID로 다시 저장 → 서버에 두 줄이 생기지 않음.
+        // 그사이 연 다른 입력 창을 닫거나 보던 달을 바꾸지 않게 saveTx(창 닫기·달 이동 포함) 대신 바로 저장
+        const undo = prev ? () => ledger.saveTx(id, prev)
+          .then(({ synced: s }) => show('되돌렸어요' + savedSuffix(s, navigator.onLine !== false)))
+          .catch(fail('되돌리지 못했어요')) : undefined;
         show('삭제했어요' + savedSuffix(synced, navigator.onLine !== false), undo);
       })
       .catch(fail('삭제하지 못했어요'));

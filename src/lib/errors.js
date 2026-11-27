@@ -18,5 +18,12 @@ const RULES = [
 export function koError(e) {
   const msg = (e && e.message) || String(e || '');
   const hit = RULES.find(([re]) => re.test(msg));
-  return hit ? hit[1] : `문제가 생겼어요: ${msg}`;
+  if (hit) return hit[1];
+  // 앱이 만든 한국어 오류(입력값 확인, DB 업데이트 필요 등)는 그대로 — "문제가 생겼어요: …"를 덧붙이면 말이 겹침
+  if (/[가-힣]/.test(msg)) return msg;
+  // DB 제약 위반(값 범위·형식): 영어 원문 대신 할 일을 알려 줌
+  const code = String(e?.code || '');
+  if (code === '23514' || /violates check constraint/i.test(msg)) return '저장할 수 없는 값이 있어요. 글자 수·금액을 확인해 주세요.';
+  if (code === '22P02' || code === '22007' || code === '22008' || /invalid input syntax/i.test(msg)) return '형식이 맞지 않는 값이 있어요. 날짜·금액을 확인해 주세요.';
+  return `문제가 생겼어요: ${msg}`;
 }
