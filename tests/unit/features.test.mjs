@@ -245,3 +245,29 @@ console.log('upcoming ok');
   assert.equal(koError(new Error('boom')), '문제가 생겼어요: boom');
   console.log('error text tests: all passed');
 }
+
+// 금액 붙여넣기: 소수 부분(.00 / .5)은 버림, 쉼표·원·₩ 무시
+{
+  const { parseAmount } = await import('../../src/lib/format.js');
+  assert.equal(parseAmount('12,000.00'), 12000);
+  assert.equal(parseAmount('1,234.5'), 1234);
+  assert.equal(parseAmount('₩15,000원'), 15000);
+  assert.equal(parseAmount('1.000'), 1000); // 소수 세 자리는 천 단위 구분으로 봄
+  assert.equal(parseAmount('12.'), 12);
+  assert.equal(parseAmount(''), 0);
+  console.log('amount paste tests: all passed');
+}
+
+// 리포트·카드 청구 정렬: 같은 금액·날짜끼리도 순서가 일관됨
+{
+  const { yearReport } = await import('../../src/lib/analysis.js');
+  const rows = [
+    { id: 'a', type: 'expense', amount: 1000, category: '식비', date: '2026-03-01', createdAt: 1 },
+    { id: 'b', type: 'expense', amount: 1000, category: '식비', date: '2026-03-01', createdAt: 2 },
+    { id: 'c', type: 'expense', amount: 1000, category: '식비', date: '2026-03-02', createdAt: 0 },
+  ];
+  const ids = (list) => yearReport(list, 2026).expenses.map((t) => t.id).join();
+  assert.equal(ids(rows), 'c,b,a');
+  assert.equal(ids([...rows].reverse()), 'c,b,a');
+  console.log('report order tests: all passed');
+}

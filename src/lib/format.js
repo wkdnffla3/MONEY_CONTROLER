@@ -17,7 +17,8 @@ export const prevMonth = ({ y, m }) => (m === 1 ? { y: y - 1, m: 12 } : { y, m: 
 export const nextMonth = ({ y, m }) => (m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 });
 
 // "12,345" ↔ 12345
-export const parseAmount = (s) => parseInt(String(s).replace(/[^\d]/g, ''), 10) || 0;
+// 은행 앱·엑셀에서 복사한 "12,000.00" 의 소수 부분(.00, .5)은 버림 — 그냥 숫자만 남기면 1,200,000 이 됨
+export const parseAmount = (s) => parseInt(String(s).replace(/\.\d{1,2}(?!\d)/g, '').replace(/[^\d]/g, ''), 10) || 0;
 export const formatAmountInput = (n) => (n ? n.toLocaleString('ko-KR') : '');
 
 export function sumByType(list) {
