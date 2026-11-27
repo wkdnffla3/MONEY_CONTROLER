@@ -46,7 +46,7 @@ import FavoritesBar from './components/FavoritesBar';
 import { useComments } from './hooks/useComments';
 import CommentThread from './components/CommentThread';
 import SubscriptionFinder from './components/SubscriptionFinder';
-import { detectSubscriptions, ruleFromSuggestion } from './lib/subscriptions';
+import { detectSubscriptions, ruleFromSuggestion, suggestionStartText } from './lib/subscriptions';
 import { isValidItem, isValidTx } from './lib/outbox';
 import { EMPTY_FILTERS } from './lib/searchFilters';
 import { Lazy, prefetchScreens } from './lib/lazyScreens';
@@ -439,7 +439,7 @@ export default function App() {
   const registerSubscription = (sg) => {
     if (ledger.recurring.length >= MAX_RECURRING) { show(`반복 내역은 ${MAX_RECURRING}개까지 만들 수 있어요`); return; }
     const rule = ruleFromSuggestion(sg, newId().slice(0, 40));
-    notifySaved(ledger.saveSetting('recurring', [...ledger.recurring, rule]), `"${sg.label}" 반복 내역으로 등록했어요 · 다음 달 ${rule.day}일부터 자동 기록`);
+    notifySaved(ledger.saveSetting('recurring', [...ledger.recurring, rule]), `"${sg.label}" 반복 내역으로 등록했어요 · ${suggestionStartText(rule)}`);
   };
   const dismissSubscription = (sg) => notifySaved(
     ledger.saveSetting('dismissedSubs', [...ledger.dismissedSubs.filter((k) => k !== sg.key), sg.key].slice(-100)),

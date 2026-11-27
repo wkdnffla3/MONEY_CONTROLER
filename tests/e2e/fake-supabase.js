@@ -78,7 +78,7 @@ function q(table){ const st={f:[],cols:'*'}; const b={
   order(k,o){ st.order=[k,o&&o.ascending===false?-1:1]; return b; }, limit(n){ st.limit=n; return b; }, lt(k,v){ st.lt=[k,v]; return b; }, range(a,z){ st.range=[a,z]; return b; },
   delete(){ st.del=true; return b; },
   update(row){ st.upd=row; return b; },
-  then(res,rej){ if(tableMissing(table)) return exec(()=>noTable(table), !!st.del).then(res,rej); const mc=!st.del && missingIn(table, st.cols); if(mc) return exec(()=>({data:null,error:{code:'42703',message:`column ${table}.${mc} does not exist`}})).then(res,rej);
+  then(res,rej){ if(!st.upd && !st.del && sessionStorage.getItem('__downRead')===table) return exec(()=>({data:null,error:netErr})).then(res,rej); if(tableMissing(table)) return exec(()=>noTable(table), !!st.del).then(res,rej); const mc=!st.del && missingIn(table, st.cols); if(mc) return exec(()=>({data:null,error:{code:'42703',message:`column ${table}.${mc} does not exist`}})).then(res,rej);
     if(st.upd) return exec(db=>{ if(sessionStorage.getItem('__memo100') && (table==='transactions'||table==='shopping_items') && String(st.upd.memo||'').length>100) return {data:null,error:{code:'23514',message:`new row for relation "${table}" violates check constraint "${table}_memo_check"`}}; db.writes++; db.updateCalls=(db.updateCalls||0)+1; const hit=[];
       db[table]=db[table].map(r=>{ if(!(visible(db,table,r)&&st.f.every(([k,v])=>colVal(r,k)===v))) return r; const n=bump(table,r,{...r,...st.upd}); hit.push(n); if(st.cols!=='*') logIt(db,table,'update',r,n,r.id); return n; });
       return {data:st.cols!=='*'?hit.map(r=>({version:r.version??1})):null,error:null}; }, true).then(res,rej);
