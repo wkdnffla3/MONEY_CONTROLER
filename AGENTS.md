@@ -192,4 +192,4 @@ Supabase(PostgREST)는 한 번에 최대 1,000줄만 돌려주고 오류를 내�
 - 목록 설정 삭제 되돌리기: `onSave(list, msg, { item, index })` → App `withUndo(kind)`가 알림에 되돌리기(최신 목록의 원래 자리에 다시 넣음). 반복 내역·즐겨찾기
 - 예산 카드 `planned`: `upcomingThisMonth(rules, today)`(이번 달 남은 날의 활성 반복 지출) 합계를 미리 뺌. 카테고리별 예산은 카테고리별 합계
 - '공동' 묶음 즐겨찾기(사람 없음·지운 사람)는 공동(null)으로 기록. 장보기 빠른 추가는 같은 이름(normalizeName)의 살 것이 있으면 수량 +1
-
+- 실시간: Supabase 삭제(DELETE) 이벤트는 기본 키만 실려 `user_id=eq` 필터 구독에 오지 않음 → transactions·shopping_items·tx_comments는 DELETE만 필터 없이 따로 구독하고, 내 가계부에 있는 id일 때만 반영 (가짜 서버 `__rt`도 같은 규칙)

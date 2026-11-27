@@ -88,6 +88,12 @@ assert.equal(searchTx(yr, { who: 'm1' }, [{ id: 'm1', name: '엄마' }]).count, 
 assert.equal(searchTx(yr, { q: '엄마' }, [{ id: 'm1', name: '엄마' }]).count, 1);   // 사람 이름으로도
 assert.equal(searchTx(yr, { q: '공동', type: 'expense' }, [{ id: 'm1', name: '엄마' }]).count, 3); // 공동도
 assert.equal(searchTx(yr, { q: '신한' }, [], [card]).count, 1);                       // 카드 이름으로도
+// '현금·기타' 검색: 지운 카드로 낸 내역도 포함 (리포트 카드별과 같게)
+{
+  const withGone = [...yr, { id: 'g1', type: 'expense', amount: 7000, category: '식비', memo: '', date: '2026-03-05', cardId: 'gone' }];
+  const cashAll = searchTx(withGone, { card: 'cash', type: 'expense' }, [], [card]).count;
+  assert.equal(cashAll, searchTx(yr, { card: 'cash', type: 'expense' }, [], [card]).count + 1);
+}
 assert.equal(searchTx(yr, { q: '여행' }).count, 1);                                 // 태그로도
 assert.equal(searchTx(yr, { categories: ['식비', '쇼핑'], from: '2026-03-01' }).count, 2);
 assert.deepEqual(allTags(yr), ['명절', '여행']);

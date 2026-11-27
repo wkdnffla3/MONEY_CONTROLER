@@ -12,13 +12,12 @@ const fakePush = (mode) => `(() => {
   Object.defineProperty(window.Notification, 'permission', { get: () => perm });
   window.Notification.requestPermission = () => mode === 'perm-hang' ? new Promise(() => {}) : Promise.resolve(perm = 'granted');
   window.PushManager = function () {};
-  let sub = null;
+  const mk = (ep) => ({ endpoint: ep, unsubscribe: async () => { sub = null; sessionStorage.removeItem('__pushsub'); return true; },
+    toJSON: () => ({ endpoint: ep, keys: { p256dh: 'p', auth: 'a' } }) });
+  let sub = sessionStorage.getItem('__pushsub') ? mk(sessionStorage.getItem('__pushsub')) : null; // 새로고침해도 남는 구독
   const pushManager = {
     getSubscription: async () => sub,
-    subscribe: () => mode === 'sub-hang' ? new Promise(() => {}) : Promise.resolve(sub = {
-      endpoint: 'https://fcm.googleapis.com/fcm/send/abc', unsubscribe: async () => { sub = null; return true; },
-      toJSON: () => ({ endpoint: 'https://fcm.googleapis.com/fcm/send/abc', keys: { p256dh: 'p', auth: 'a' } }),
-    }),
+    subscribe: () => mode === 'sub-hang' ? new Promise(() => {}) : Promise.resolve((sessionStorage.setItem('__pushsub', 'https://fcm.googleapis.com/fcm/send/abc'), sub = mk('https://fcm.googleapis.com/fcm/send/abc'))),
   };
   const reg = { pushManager, showNotification: async () => {} };
   Object.defineProperty(navigator, 'serviceWorker', { value: { getRegistration: async () => reg, ready: Promise.resolve(reg), register: async () => reg, addEventListener() {}, controller: null } });
@@ -82,6 +81,28 @@ test('삼성 인터넷: 미리 설정 안내, 권한 창이 안 뜨면 20초 뒤
   await page.clock.runFor(21000);
   await page.waitForTimeout(200);
   assert.match(await page.innerText('.notify-settings .err'), /애플리케이션 → 삼성 인터넷 → 알림 허용/);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+
+const subOf = (page) => page.evaluate(async () => !!(await (await navigator.serviceWorker.getRegistration()).pushManager.getSubscription()));
+test('로그인했는데 이 브라우저의 푸시 구독이 내 계정 것이 아니면(다른 계정이 로그아웃 없이 떠남) 해제', async () => {
+  const { seedScript } = await import('./helpers.mjs');
+  const { ctx, page, errs } = await open(env, { seed: seedScript(), init: ["sessionStorage.setItem('__pushsub', 'https://fcm.googleapis.com/fcm/send/someone-else')", fakePush('ok')] });
+  await page.waitForTimeout(800);
+  assert.equal(await subOf(page), false);
+  assert.deepEqual(errs, []);
+  await ctx.close();
+});
+
+test('내 계정 구독이면 그대로', async () => {
+  const { seedScript } = await import('./helpers.mjs');
+  const ep = 'https://fcm.googleapis.com/fcm/send/mine';
+  const seed = seedScript({ extra: { push_subscriptions: [{ id: 'ps1', user_id: 'u1', account_id: 'u1', device_id: 'd', endpoint: ep, p256dh: 'p', auth: 'a', prefs: {} }] } });
+  const { ctx, page, errs } = await open(env, { seed, init: [`sessionStorage.setItem('__pushsub', '${ep}')`, fakePush('ok')] });
+  await page.waitForTimeout(800);
+  assert.equal(await subOf(page), true);
   assert.deepEqual(errs, []);
   await ctx.close();
 });

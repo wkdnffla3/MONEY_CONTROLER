@@ -35,7 +35,7 @@ export function describe(e, ctx) {
   const isTx = e.table_name === 'transactions';
   const row = e.after || e.before || {};
   const memberName = (id) => ctx.members.find((m) => m.id === id)?.name || (id ? '(삭제된 사람)' : '공동');
-  const cardName = (id) => (id ? ctx.cards.find((c) => c.id === id)?.name || '(삭제된 카드)' : '현금·체크');
+  const cardName = (id) => (id ? ctx.cards.find((c) => c.id === id)?.name || '(삭제된 카드)' : '현금·기타');
   const fmtField = (k, f, v) => (k === 'member_id' ? memberName(v) : k === 'card_id' ? cardName(v) : f ? f(v) : String(v ?? ''));
 
   if (isTx) {

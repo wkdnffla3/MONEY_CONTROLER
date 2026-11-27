@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { iconOf, useCategories } from '../lib/categories';
 import { SHARED_LABEL, colorVar, findMember, memberColor } from '../lib/members';
 import { newId, MAX_AMOUNT, MAX_MEMO } from '../lib/outbox';
-import { MAX_RECURRING, nextDate, occurrenceDate, resumeRule, ymOf } from '../lib/recurring';
+import { MAX_RECURRING, dueMonths, nextDate, occurrenceDate, resumeRule, ymOf } from '../lib/recurring';
 import { formatAmountInput, parseAmount, won } from '../lib/format';
 import { useFormData } from '../lib/formData';
 import TagInput from './TagInput';
@@ -104,7 +104,10 @@ function RuleForm({ rule, members, onCancel, onDone }) {
   const todayNum = new Date().getDate();
   const thisMonthDate = occurrenceDate(thisYm, day);
   // 이번 달부터 시작하는데 날짜가 이미 지났으면 저장하자마자 이번 달 내역이 생긴다는 걸 미리 알려줌
-  const willCreateNow = !rule && start <= thisYm && Number(thisMonthDate.slice(8)) <= todayNum;
+  // 시작 월을 지난달 이전으로 고르면 그 달들도 한꺼번에 기록됨 → 몇 개월인지 미리 알려줌
+  const due = !rule && /^\d{4}-\d{2}$/.test(start) ? dueMonths({ active: true, start, end: end || null, last: null, day }).map((x) => x.ym) : [];
+  const willCreateNow = due.length > 0;
+  const mLabel = (ym) => `${Number(ym.slice(5))}월`;
 
   const submit = (e) => {
     e.preventDefault();
@@ -210,7 +213,9 @@ function RuleForm({ rule, members, onCancel, onDone }) {
         <input id="rr-end" type="month" value={end} onChange={(e) => setEnd(e.target.value)} />
       </div>
       {day >= 29 && <p className="hint">{day}일이 없는 달에는 그 달의 마지막 날에 기록돼요.</p>}
-      {willCreateNow && <p className="hint warn-text">이번 달 {dayLabel(day)}이 이미 지나서, 저장하면 이번 달 내역이 바로 기록돼요. 다음 달부터 시작하려면 시작 월을 바꿔 주세요.</p>}
+      {willCreateNow && (due.length === 1 && due[0] === thisYm
+        ? <p className="hint warn-text">이번 달 {dayLabel(day)}이 이미 지나서, 저장하면 이번 달 내역이 바로 기록돼요. 다음 달부터 시작하려면 시작 월을 바꿔 주세요.</p>
+        : <p className="hint warn-text">저장하면 {mLabel(due[0])}~{mLabel(due[due.length - 1])} {due.length}개월 내역이 바로 기록돼요. 지난 달을 채울 게 아니면 시작 월을 이번 달 이후로 바꿔 주세요.</p>)}
       <div className="err" aria-live="polite">{error}</div>
       <div className="form-actions">
         <button type="button" className="btn ghost" onClick={onCancel}>취소</button>
