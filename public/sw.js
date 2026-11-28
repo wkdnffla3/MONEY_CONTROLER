@@ -72,16 +72,35 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
       .then((keys) => Promise.all(
-        keys.filter((k) => k.startsWith('ledger-') && k !== SHELL_CACHE && k !== ASSET_CACHE).map((k) => caches.delete(k)),
+        keys.filter((k) => k.startsWith('ledger-') && k !== SHELL_CACHE && k !== ASSET_CACHE && k !== SHARE_CACHE).map((k) => caches.delete(k)),
       ))
       .then(() => self.clients.claim()),
   );
 });
 
+// ===== 안드로이드 "공유 → 가계부" (manifest share_target) =====
+// 공유한 결제 문자를 이 기기 캐시에 잠깐 넣고 앱을 "/?share=1" 로 엶 → 앱이 읽고 바로 지움 (src/lib/shareTarget.js)
+// 서버로는 보내지 않음. 이름은 src/lib/shareTarget.js 와 같게
+const SHARE_CACHE = 'ledger-share';
+const SHARE_KEY = '/__shared-text';
+async function receiveShare(request) {
+  try {
+    const form = await request.formData();
+    const text = ['title', 'text', 'url'].map((k) => form.get(k)).filter((v) => typeof v === 'string' && v.trim()).join('\n').slice(0, 2000);
+    const cache = await caches.open(SHARE_CACHE);
+    await cache.put(SHARE_KEY, new Response(text, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } }));
+  } catch { /* 못 받으면 앱이 "읽지 못했어요" 안내 */ }
+  return Response.redirect('/?share=1', 303);
+}
+
 self.addEventListener('fetch', (event) => {
   const { request } = event;
-  if (request.method !== 'GET') return;
   const url = new URL(request.url);
+  if (request.method === 'POST' && url.origin === self.location.origin && url.pathname === '/share-target') {
+    event.respondWith(receiveShare(request));
+    return;
+  }
+  if (request.method !== 'GET') return;
   if (url.origin !== self.location.origin) return; // Supabase, 폰트 등은 브라우저에 맡김
 
   // 화면 이동(주소 입력, 새로고침, 홈 화면 아이콘으로 열기)
