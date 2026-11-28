@@ -820,3 +820,11 @@ body:has(.cart-bar) .toast{bottom:calc(96px + env(safe-area-inset-bottom))}
 .rule-group + .rule-group{margin-top:12px}
 .rule-glabel .rule-gsum{margin-left:auto;font-weight:600;color:var(--muted)}
 .rule-slip{font-size:12px;color:var(--expense);margin-top:4px;line-height:1.4}
+/* 결제 문자 붙여넣기 */
+.pay-paste{display:grid;gap:6px}
+.pay-paste > .btn{justify-self:start}
+.pay-box{display:grid;gap:6px}
+.pay-box textarea{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface-2);font-size:14px;resize:vertical;min-height:84px}
+.pay-box textarea:focus{outline:2px solid var(--accent);outline-offset:-1px;background:var(--surface)}
+.pay-actions{display:flex;gap:6px;justify-content:flex-end}
+.pay-msg{margin:0}

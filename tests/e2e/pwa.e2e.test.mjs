@@ -93,6 +93,34 @@ describe('오프라인 앱', () => {
     await ctx.close();
   });
 
+  test('공유 대상(share_target): 서비스 워커가 공유 글을 서버로 보내지 않고 받아 앱으로 넘김', async () => {
+    const { ctx, page, errs } = await open(env, { seed });
+    const m = await page.evaluate(async () => (await fetch(document.querySelector('link[rel=manifest]').href)).json());
+    assert.deepEqual(m.share_target, { action: '/share-target', method: 'POST', enctype: 'multipart/form-data', params: { title: 'title', text: 'text', url: 'url' } });
+    await page.evaluate(async () => { await navigator.serviceWorker.register('/sw.js'); await navigator.serviceWorker.ready; });
+    await page.reload();
+    await page.waitForSelector('.nav-tabs');
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller);
+    // 서비스 워커가 가로채면 서버 대신 "/?share=1 로 넘김"(redirect) 응답이 오고, 글은 이 기기 캐시에만 있음
+    // (테스트 서버에는 /share-target 이 없어서, 서버까지 갔다면 redirect 가 아니라 다른 응답이 옴)
+    const res = await page.evaluate(async () => {
+      const fd = new FormData();
+      fd.append('text', '삼성1234승인 홍*동\n8,500원 일시불\n11/26 12:05 김밥천국');
+      const r = await fetch('/share-target', { method: 'POST', body: fd, redirect: 'manual' });
+      const c = await (await caches.open('ledger-share')).match('/__shared-text');
+      return { type: r.type, saved: c ? await c.text() : null };
+    });
+    assert.equal(res.type, 'opaqueredirect'); // /?share=1 로 넘김
+    assert.match(res.saved, /8,500원/);
+    // 앱이 공유 주소로 열리면 입력 창을 채우고 받은 글을 지움
+    await page.goto(env.url + '?share=1');
+    await page.waitForSelector('.sheet .amount-input input');
+    assert.equal(await page.inputValue('.sheet .amount-input input'), '8,500');
+    assert.equal(await page.evaluate(async () => !!(await (await caches.open('ledger-share')).match('/__shared-text'))), false);
+    assert.deepEqual(errs, []);
+    await ctx.close();
+  });
+
   test('바로가기 ?action=add → 내역 추가 창', async () => {
     const { ctx, page } = await open(env, { seed, path: '?action=add' });
     await page.waitForTimeout(300);

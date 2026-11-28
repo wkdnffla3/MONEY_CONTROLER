@@ -33,6 +33,8 @@ import { CategoriesContext, CategoryActionsContext, checkNewCategory, resolveCat
 import NavTabs from './components/NavTabs';
 import { MAX_QTY, summarize as summarizeShopping } from './lib/shopping';
 import { FormDataContext } from './lib/formData';
+import { categoryByMemo, matchCard, parsePayText } from './lib/payText';
+import { openedFromShare, takeSharedText } from './lib/shareTarget';
 import { allTags, compareMonths, lastPrices as computeLastPrices, normalizeName } from './lib/analysis';
 import CardBills from './components/CardBills';
 import MonthCompare from './components/MonthCompare';
@@ -210,7 +212,9 @@ export default function App() {
   const whoTx = useMemo(() => filterByOwner(allTx, members, whoValid), [allTx, members, whoValid]);
   const cats = useMemo(() => resolveCategories(ledger.categories), [ledger.categories]);
   const tagList = useMemo(() => allTags(allTx), [allTx]);
-  const formData = useMemo(() => ({ cards: ledger.cards, tags: tagList }), [ledger.cards, tagList]);
+  // categoryFor: 결제 문자 붙여넣기에서 같은 가맹점(메모)에 예전에 쓴 카테고리 추천
+  const categoryFor = useMemo(() => categoryByMemo(allTx), [allTx]);
+  const formData = useMemo(() => ({ cards: ledger.cards, tags: tagList, categoryFor }), [ledger.cards, tagList, categoryFor]);
   const cardUsage = useMemo(() => {
     const u = {};
     for (const t of allTx) if (t.cardId) u[t.cardId] = (u[t.cardId] || 0) + 1;
@@ -238,6 +242,28 @@ export default function App() {
     if (!txId || txId.length > 64) return;
     window.history.replaceState(null, '', window.location.pathname + window.location.hash);
     setSheet({ kind: 'edit', id: txId });
+  }, [uid]);
+
+  // 안드로이드 "공유 → 가계부"로 결제 문자·알림을 보냈을 때(?share=1): 읽어서 새 내역 창을 채워 엶 (저장은 사람이 직접)
+  const shareRef = useRef({ cards: ledger.cards, categoryFor });
+  shareRef.current = { cards: ledger.cards, categoryFor };
+  useEffect(() => {
+    if (!uid || !openedFromShare()) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.hash);
+    takeSharedText().then((text) => {
+      if (!text.trim()) { show('공유한 내용을 읽지 못했어요. 입력 창의 "📋 결제 문자 붙여넣기"를 써 주세요.'); return; }
+      const r = parsePayText(text);
+      if (r.cancel) { show('승인 취소 문자예요. 원래 내역을 찾아 지우거나 고쳐 주세요.', undefined, { ms: 6000 }); return; }
+      if (!r.ok) { show('결제 금액을 찾지 못했어요. 카드 결제 문자를 공유해 주세요.', undefined, { ms: 6000 }); return; }
+      const { cards, categoryFor: byMemo } = shareRef.current;
+      const cardId = matchCard(cards, r.cardHint);
+      setSheet({ kind: 'add', prefill: {
+        id: `share-${Date.now()}`, type: 'expense', amount: r.amount, memo: r.merchant, date: r.date || todayStr(),
+        cardId, inst: cardId ? r.inst : 1, ...(byMemo[r.merchant.trim().toLowerCase()] ? { category: byMemo[r.merchant.trim().toLowerCase()] } : {}),
+      } });
+      show('결제 문자에서 읽었어요. 확인하고 저장해 주세요.');
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid]);
 
   // 첫 화면이 뜬 뒤 한가할 때 나머지 화면을 미리 받아 둠 (오프라인 대비, 탭 이동이 즉시)

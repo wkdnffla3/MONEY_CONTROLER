@@ -106,6 +106,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 보관 목록 안전장치 | `enqueue`·`enqueueMany`는 `isValidOp`로 검사해 틀리면 `invalid_op` 오류(조용히 버리지 않음). 가계부 전환 시 `activeLedger` ref로 이전 가계부의 늦은 `updateServer`·`load` 결과를 무시, 반복 자동 등록은 `loadedFor === userId`일 때만  설정을 못 받은 불러오기(`stRes.error`)는 빈 설정으로 덮지 않고 현재 상태 유지 |
 | 화면 테마 | `lib/theme.js`: 기기별 localStorage `ledger.theme`(system·light·dark, 서버에 안 보냄, 잘못된 값은 system). `main.jsx`가 첫 그리기 전에 `<html data-theme>` 적용 + 다른 탭 변경 따라감. CSS는 어두운 색 변수를 `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`와 `:root[data-theme="dark"]` 두 곳에 같은 값으로 둠(바꿀 때 둘 다). 강조색 위 글자는 `--on-accent`. 설정 메뉴 맨 위 `.theme-row` |
 | 말일 결제 밀림 | `findMonthEndSlips`(lib/subscriptions): 진행 중·결제일 28일 이후(`SLIP_MIN_DAY`)·전달 몫 자동 기록됨(`last` ≥ 전달)인 반복 내역과 같은 구독(`sameSubscription`: 메모 같음, 메모 없으면 카테고리 같고 금액 10% 이내)을 이번 달·지난달 1~3일(`SLIP_MAX_DAY`)에 직접 입력(rec-·shop- 아님)했으면 → App이 서버에서 받은 뒤 `pauseForSlip`(active=false, `pausedReason:slip`, `slipTx`=그 내역)으로 저장 + 알림("반복 내역 보기"). 반복 내역 화면에 이유 표시. `resumeRule`은 이유만 지우고 `slipTx`는 남겨 같은 결제로 다시 멈추지 않음, 수정 화면도 둘 다 유지 |
+| 결제 문자로 입력 | `lib/payText.js` `parsePayText`: 카드 승인 문자·알림 글에서 금액(누적·잔액 제외)·날짜(연도 없으면 오늘 기준, 31일 넘게 미래면 작년)·할부·가맹점(시각 뒤 글자 또는 첫 글자 줄)·카드 이름·취소 여부를 읽음. `matchCard`로 등록 카드와 맞추고 `categoryByMemo`(FormData `categoryFor`)로 같은 가맹점에 예전에 쓴 카테고리. **저장은 사람이 직접**(자동 저장 안 함). 입구 ① 새 내역 창 "📋 결제 문자 붙여넣기"(클립보드, 못 읽으면 붙여 넣는 칸) ② 안드로이드 설치 앱 "공유 → 가계부": manifest `share_target`(POST `/share-target`) → sw.js가 글을 캐시 `ledger-share`의 `/__shared-text`에 넣고 `/?share=1`로 리다이렉트 → App이 `takeSharedText`로 읽고 바로 지움. 서버로 보내지 않음. 취소 문자·금액 없는 글은 채우지 않고 안내 |
 | 구독 자동 발견 | 3달 이상 연속, 한 달 1회, 금액 차 10% 이내, 날짜 차 6일 이내, 마지막이 이번 달·지난달. 등록하면 `last`=마지막 결제 달(`ruleFromSuggestion`), 안내 문구는 `suggestionStartText`(이번 달 몫이 바로 기록되는지). 무시 목록은 공유 설정(`dismissed_subs`) |
 
 ### 4.4 전체 백업·복원
@@ -154,7 +155,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 - `tests/e2e`: `src/`를 esbuild로 묶되 `@supabase/supabase-js`만 `fake-supabase.js`로 바꾼 앱을 Playwright(크로미움)로 조작. 화면 구성, 메모·링크·자정, 오프라인·재전송·중복 방지, 카테고리 이름 변경, 011 전 DB 보관, 공유 참여, 댓글, 변경 기록·되살리기, 서비스 워커 오프라인.
 - `tests/sql`: 테스트마다 빈 DB에 `supabase-shim.sql`(역할, `auth.uid()`, Vault·pg_cron·pg_net 흉내) → `schema.sql` → 테스트. 보안·공유·기록·되살리기·메모 200·011 업그레이드·푸시 주소 제한(012)·이름 일괄 변경(013)·백업 복원(014)·반복 100개(015)·회원 탈퇴(016)·버전 확인(017)·리포트 예약.
 - 바꿀 때 같이 고칠 것: 새 DB 칸·테이블 → `fake-supabase.js`의 `MISSING`/`tableMissing`와 SQL 테스트. 화면 문구·클래스 이름 → e2e 선택자. 새 마이그레이션 → `run.mjs`의 `SUITES`.
-- **아직 실제 Supabase 클라우드 위에서의 통합 점검은 자동화하지 않았다.** 크게 바꾼 뒤에는 통합 점검 체크리스트(계정 두 개로 공유·댓글·푸시·오프라인 입력)를 직접 확인하길 권한다.
+- **아직 실제 Supabase 클라우드 위에서의 통합 점검은 자동화하지 않았다.** 크게 바꾼 뒤에는 `docs/integration-checklist.md`(계정 두 개·기기 두 대로 공유·댓글·푸시·오프라인 입력 등)를 직접 확인하길 권한다. 새 기능을 만들면 이 체크리스트에도 확인 항목을 추가한다.
 
 ## 서버에서 여러 줄 읽기 (필수)
 

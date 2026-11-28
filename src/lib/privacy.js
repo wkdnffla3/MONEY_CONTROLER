@@ -5,7 +5,7 @@
 const env = import.meta.env || {};
 const v = (k) => String(env[k] || '').trim();
 
-export const PRIVACY_EFFECTIVE = '2026-11-18'; // 처리방침을 바꾸면 날짜를 고치고 README 변경 내역에 적기
+export const PRIVACY_EFFECTIVE = '2026-11-28'; // 처리방침을 바꾸면 날짜를 고치고 README 변경 내역에 적기
 export const PRIVACY_CONTACT = v('VITE_PRIVACY_CONTACT');
 export const OPERATOR_NAME = v('VITE_OPERATOR_NAME');
 export const DATA_REGION = v('VITE_DATA_REGION');

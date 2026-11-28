@@ -10,6 +10,7 @@ import { formatAmountInput, parseAmount } from '../lib/format';
 import { MAX_MEMO } from '../lib/outbox';
 import MemoLinks from './MemoLinks';
 import { backfillCount } from '../lib/recurring';
+import { MAX_PAY_TEXT, matchCard, parsePayText } from '../lib/payText';
 
 const QUICK = [1000, 5000, 10000, 50000];
 const quickLabel = (v) => (v >= 10000 ? `+${v / 10000}만` : `+${v / 1000}천`);
@@ -30,13 +31,18 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
   const [amount, setAmount] = useState(seed?.amount ? formatAmountInput(seed.amount) : '');
   const CATS = useCategories();
   const [category, setCategory] = useState(seed?.category || CATS[seed?.type || 'expense'][0].name);
-  const [date, setDate] = useState(initial?.date || defaultDate);
+  // 날짜·할부: 결제 문자 공유로 열 때는 문자 속 날짜·할부로
+  const [date, setDate] = useState(initial?.date || prefill?.date || defaultDate);
   const [memo, setMemo] = useState(seed?.memo || '');
-  const { cards, tags: tagSuggestions } = useFormData();
+  const { cards, tags: tagSuggestions, categoryFor = {} } = useFormData();
   const [tags, setTags] = useState(seed?.tags || []);
   // 결제수단: null = 현금·체크카드 등, 카드 id = 신용카드 (삭제된 카드면 현금으로 보임)
   const [cardId, setCardId] = useState(seed?.cardId && cards.some((c) => c.id === seed.cardId) ? seed.cardId : null);
-  const [inst, setInst] = useState(initial?.inst || 1);
+  const [inst, setInst] = useState(initial?.inst || (seed?.cardId ? prefill?.inst : 0) || 1);
+  // 결제 문자 붙여넣기 (새 내역만): 클립보드를 못 읽으면 직접 붙여 넣는 칸을 엶
+  const [payOpen, setPayOpen] = useState(false);
+  const [payText, setPayText] = useState('');
+  const [payMsg, setPayMsg] = useState('');
   // 누가: 등록된 사람 id 또는 null(공동). 삭제된 사람이 지정돼 있던 내역은 공동으로 보임
   const validId = (id) => (id && members.some((m) => m.id === id) ? id : null);
   // 즐겨찾기로 열면 그 즐겨찾기의 사람(공동이면 공동), 아니면 이 기기의 '나'
@@ -64,6 +70,33 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
   const changeType = (t) => {
     setType(t);
     if (!CATS[t].some((c) => c.name === category)) setCategory(CATS[t][0].name);
+  };
+
+  // 결제 문자 → 금액·날짜·가맹점(메모가 비어 있을 때)·카드·할부·카테고리(같은 가맹점에 예전에 쓴 것). 저장은 사람이 직접
+  const applyPay = (text) => {
+    const r = parsePayText(text);
+    if (r.cancel) { setPayMsg('승인 취소 문자예요. 원래 내역을 찾아 지우거나 고쳐 주세요.'); return false; }
+    if (!r.ok) { setPayMsg('결제 금액을 찾지 못했어요. 카드 결제 문자를 통째로 붙여 넣어 주세요.'); return false; }
+    setType('expense');
+    setAmount(formatAmountInput(Math.min(r.amount, MAX_AMOUNT)));
+    if (r.date) setDate(r.date);
+    if (r.merchant && !memo.trim()) setMemo(r.merchant.slice(0, MAX_MEMO));
+    const cid = matchCard(cards, r.cardHint);
+    if (cid) { setCardId(cid); setInst(r.inst); }
+    const cat = categoryFor[r.merchant.trim().toLowerCase()];
+    if (cat && CATS.expense.some((c) => c.name === cat)) setCategory(cat);
+    else if (!CATS.expense.some((c) => c.name === category)) setCategory(CATS.expense[0].name);
+    setPayOpen(false); setPayText('');
+    setPayMsg(`결제 문자에서 ${[r.date && '날짜', r.merchant && '가맹점', cid && '카드'].filter(Boolean).concat('금액').join('·')}을 읽었어요. 확인하고 저장해 주세요.`);
+    return true;
+  };
+  const pasteFromClipboard = async () => {
+    setPayMsg('');
+    try {
+      const text = await navigator.clipboard?.readText?.();
+      if (text && text.trim()) { if (!applyPay(text)) { setPayText(text.slice(0, MAX_PAY_TEXT)); setPayOpen(true); } return; }
+    } catch { /* 권한 거절·지원 안 함 → 직접 붙여 넣는 칸 */ }
+    setPayOpen(true);
   };
 
   const addQuick = (v) => {
@@ -100,7 +133,7 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
         inst: card ? inst : 1,
         createdAt: initial?.createdAt || Date.now(),
       }, { repeat: repeatOn });
-      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); setTags([]); setInst(1); setRepeat(false); }
+      if (!initial) { setAmount(''); setMemo(''); setMemberId(validId(defaultMemberId)); setTags([]); setInst(1); setRepeat(false); setPayMsg(''); }
     } catch {
       // 오류 알림은 상위(App)에서 토스트로 표시
     } finally {
@@ -116,6 +149,25 @@ export default function TxForm({ initial, prefill, defaultDate, onSubmit, onDele
           <button key={t} type="button" data-t={t} aria-pressed={type === t} onClick={() => changeType(t)}>{label}</button>
         ))}
       </div>
+
+      {!initial && (
+        <div className="pay-paste">
+          {!payOpen ? (
+            <button type="button" className="btn ghost sm" onClick={pasteFromClipboard}>📋 결제 문자 붙여넣기</button>
+          ) : (
+            <div className="pay-box">
+              <textarea aria-label="결제 문자" rows={4} maxLength={MAX_PAY_TEXT} autoFocus value={payText}
+                placeholder="카드 결제 문자나 알림 내용을 길게 눌러 복사한 뒤 여기에 붙여 넣으세요"
+                onChange={(e) => setPayText(e.target.value)} />
+              <div className="pay-actions">
+                <button type="button" className="btn ghost sm" onClick={() => { setPayOpen(false); setPayText(''); setPayMsg(''); }}>닫기</button>
+                <button type="button" className="btn primary sm" disabled={!payText.trim()} onClick={() => applyPay(payText)}>읽기</button>
+              </div>
+            </div>
+          )}
+          {payMsg && <p className="hint pay-msg" aria-live="polite">{payMsg}</p>}
+        </div>
+      )}
 
       <div className="field">
         <label htmlFor={`${uid}-amt`}>금액</label>
