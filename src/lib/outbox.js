@@ -102,6 +102,8 @@ export function isValidRecurring(list) {
     // 결제 카드·태그 (선택). 반복 내역은 일시불만
     if (!(r.cardId == null || isStr(r.cardId, 64))) return false;
     if (!(r.tags == null || isValidTags(r.tags))) return false;
+    // 말일 결제가 1일로 밀려 자동으로 멈춘 경우 (lib/subscriptions.js pauseForSlip)
+    if (!(r.pausedReason == null || r.pausedReason === 'slip') || !(r.slipTx == null || isStr(r.slipTx, 64))) return false;
     ids.add(r.id);
   }
   return true;

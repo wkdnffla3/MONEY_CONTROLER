@@ -6,7 +6,7 @@ AI 코딩 도우미(Claude, Gemini 등)와 사람이 함께 보는 프로젝트 
 
 ## 1. 한눈에 보기
 
-- 개인·가족용 가계부 반응형 웹앱(PWA). 한국어 UI, 한국 시간(Asia/Seoul) 기준.
+- 개인·가족용 가계부 반응형 웹앱(PWA). 한국어 UI. **날짜는 기기 시간 기준**(오늘·이번 달·반복 내역 기록일·예산·리포트 기간). 서버의 주간·월간 리포트도 기기마다 알림 설정의 시간대(`prefs.tz`, 처음엔 기기 시간대, 없으면 Asia/Seoul)로 기간을 계산.
 - 스택: React 19 + Vite 7 (자바스크립트, 타입스크립트 아님), `@supabase/supabase-js` 2.x
 - 배포: 앱 = Vercel (`vercel.json`에 보안 헤더·CSP), DB·로그인·실시간·함수 = Supabase 무료 플랜
 - 자체 서버 운영 가이드(Supabase 셀프호스팅 + Caddy + Tailscale)는 별도 문서로 정리돼 있음. 앱 코드는 두 환경에서 같고, 빌드할 때 넣는 주소와 키만 다름
@@ -92,7 +92,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 알림 방법 1 | 앱 안 알림: 실시간 INSERT 중 다른 기기에서 온 것만 배너. 내 기기 판별 = `device_id` 칸(007) + 최근 저장 ID 기록(007 전 대비) |
 | 알림 방법 2 | 웹 푸시: DB 웹훅(transactions, shopping_items, tx_comments의 INSERT) → `push-notify` → 같은 가계부의 다른 기기. 함수는 `--no-verify-jwt`로 배포하고 `x-webhook-secret` 헤더로 확인. 404/410 구독은 삭제. 앱이 보이는 상태면 서비스워커가 시스템 알림을 생략 |
 | 알림 설정 | 기기마다 저장 + 푸시 구독의 `prefs`. 종류별 끄기, 방해 금지 시간(푸시·시스템 알림만, 배너는 보임) |
-| 주간·월간 리포트 (009) | pg_cron이 UTC 0시(= 한국 9시)에 함수 호출. 주간 = 지난주 월~일, 월간 = 지난달. 그 기간 내역 없으면 안 보냄 |
+| 주간·월간 리포트 (009) | pg_cron이 UTC 0시(= 한국 9시)에 함수 호출. 주간 = 지난주 월~일, 월간 = 지난달. 기간은 기기(구독)마다 `prefs.tz` 기준(`sendReports`가 가계부·시간대별로 묶어 계산, 내역은 가계부당 한 번 조회). 그 기간 내역 없으면 안 보냄 |
 | 변경 기록 (010) | DB 트리거가 기록(앱에서 수정·삭제 불가), 90일 보관. 같은 내용 재저장은 기록 안 함. 되살리기 = 같은 ID로 upsert. 장바구니 담기·빼기는 화면에서 숨김 |
 | 내역 댓글 (010) | 온라인 전용, 보낼 목록을 거치지 않음. 내 댓글만 삭제, 수정 없음. 내역을 지워도 댓글은 남아서 되살리면 다시 붙음. 푸시는 쓴 사람 계정의 모든 기기 제외 |
 | 즐겨찾기 보기 | `lib/favorites.js` `groupFavorites`(= `lib/members.js` `groupByMember`, 반복 내역과 공용): "누가"(memberId) 기준 묶음, 이 기기 사람(meId) 먼저 → 사람 목록 순 → 공동(없음·지워진 사람). 묶음이 2개 이상일 때만 탭·묶음 이름. 펼치기·탭은 기기별 localStorage `ledger.favView`. 순서 바꾸기는 `moveInGroup`(같은 묶음 안에서만) |
@@ -105,6 +105,7 @@ supabase/functions/_shared/notifyMessage.js  알림·리포트 문구 — 앱과
 | 서비스 워커 정리 | `syncAssets`: 새 index.html을 받으면 필요한 빌드 파일을 모두 확보한 뒤에만 나머지 `/assets/` 캐시를 지움(sw.js가 안 바뀌어 재설치되지 않으므로 여기서 정리) |
 | 보관 목록 안전장치 | `enqueue`·`enqueueMany`는 `isValidOp`로 검사해 틀리면 `invalid_op` 오류(조용히 버리지 않음). 가계부 전환 시 `activeLedger` ref로 이전 가계부의 늦은 `updateServer`·`load` 결과를 무시, 반복 자동 등록은 `loadedFor === userId`일 때만  설정을 못 받은 불러오기(`stRes.error`)는 빈 설정으로 덮지 않고 현재 상태 유지 |
 | 화면 테마 | `lib/theme.js`: 기기별 localStorage `ledger.theme`(system·light·dark, 서버에 안 보냄, 잘못된 값은 system). `main.jsx`가 첫 그리기 전에 `<html data-theme>` 적용 + 다른 탭 변경 따라감. CSS는 어두운 색 변수를 `@media (prefers-color-scheme: dark) :root:not([data-theme="light"])`와 `:root[data-theme="dark"]` 두 곳에 같은 값으로 둠(바꿀 때 둘 다). 강조색 위 글자는 `--on-accent`. 설정 메뉴 맨 위 `.theme-row` |
+| 말일 결제 밀림 | `findMonthEndSlips`(lib/subscriptions): 진행 중·결제일 28일 이후(`SLIP_MIN_DAY`)·전달 몫 자동 기록됨(`last` ≥ 전달)인 반복 내역과 같은 구독(`sameSubscription`: 메모 같음, 메모 없으면 카테고리 같고 금액 10% 이내)을 이번 달·지난달 1~3일(`SLIP_MAX_DAY`)에 직접 입력(rec-·shop- 아님)했으면 → App이 서버에서 받은 뒤 `pauseForSlip`(active=false, `pausedReason:slip`, `slipTx`=그 내역)으로 저장 + 알림("반복 내역 보기"). 반복 내역 화면에 이유 표시. `resumeRule`은 이유만 지우고 `slipTx`는 남겨 같은 결제로 다시 멈추지 않음, 수정 화면도 둘 다 유지 |
 | 구독 자동 발견 | 3달 이상 연속, 한 달 1회, 금액 차 10% 이내, 날짜 차 6일 이내, 마지막이 이번 달·지난달. 등록하면 `last`=마지막 결제 달(`ruleFromSuggestion`), 안내 문구는 `suggestionStartText`(이번 달 몫이 바로 기록되는지). 무시 목록은 공유 설정(`dismissed_subs`) |
 
 ### 4.4 전체 백업·복원

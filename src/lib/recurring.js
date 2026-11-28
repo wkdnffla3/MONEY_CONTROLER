@@ -67,7 +67,9 @@ export function resumeRule(rule, today = new Date()) {
   const passed = Number(occurrenceDate(cur, rule.day).slice(8)) <= today.getDate();
   const skipTo = passed ? cur : toYm(toNum(cur) - 1);
   const last = rule.last && toNum(rule.last) >= toNum(skipTo) ? rule.last : skipTo;
-  return { ...rule, active: true, last };
+  // 멈춘 이유는 지움 (slipTx 는 남겨서 같은 결제로 다시 멈추지 않게)
+  const { pausedReason: _r, ...rest } = rule;
+  return { ...rest, active: true, last };
 }
 
 /** 등록할 내역 목록과 last가 갱신된 규칙 목록 */

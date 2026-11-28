@@ -92,3 +92,43 @@ export function suggestionStartText(rule, today = new Date()) {
   const todayKey = `${ymOf(today)}-${String(today.getDate()).padStart(2, '0')}`;
   return d <= todayKey ? `이번 달 ${day}일 몫은 바로 기록돼요` : `${m}월 ${day}일부터 자동 기록`;
 }
+
+// ===== 말일 결제가 다음 달 1일로 밀림 =====
+// 말일(28일 이후)에 자동 기록되는 반복 내역인데, 실제 결제가 다음 달 1~3일에 들어와 직접 입력되면
+// 같은 구독이 그 달에 한 번 더 기록됨(자동 + 직접) → 그 반복 내역의 자동 기록을 멈추고 알림
+export const SLIP_MIN_DAY = 28; // 반복 내역 결제일이 이날 이후면 "말일 결제"로 봄
+export const SLIP_MAX_DAY = 3;  // 다음 달 이날까지 들어온 결제를 "밀린 결제"로 봄
+
+/** 반복 내역과 같은 구독으로 보이는 내역인지: 메모가 있으면 같은 메모, 없으면 같은 카테고리 + 금액 차이 10% 이내 */
+export function sameSubscription(rule, t) {
+  if (t.type !== rule.type) return false;
+  const rm = normMemo(rule.memo);
+  if (rm.length >= 2) return rm === normMemo(t.memo);
+  return t.category === rule.category && Math.abs(t.amount - rule.amount) <= rule.amount * 0.1;
+}
+
+/**
+ * 말일 결제가 1일로 밀린 반복 내역 → [{ rule, tx }]
+ * 조건: 진행 중, 결제일 28일 이후, 그 전달 몫을 이미 자동 기록함(last ≥ 전달),
+ *       이번 달·지난달 1~3일에 같은 구독으로 보이는 직접 입력 내역(rec-·shop- 아님)이 있음.
+ *       이미 알린 내역(rule.slipTx)은 다시 알리지 않음 (다시 시작해도 같은 내역으로 또 멈추지 않게)
+ */
+export function findMonthEndSlips(rules, txList, today = new Date()) {
+  const cur = monthNum(ymOf(today));
+  const out = [];
+  for (const r of rules || []) {
+    if (!r.active || !(r.day >= SLIP_MIN_DAY) || typeof r.last !== 'string') continue;
+    const hit = (txList || []).find((t) => {
+      if (typeof t.id !== 'string' || t.id.startsWith('rec-') || t.id.startsWith('shop-') || t.id === r.slipTx || t.id === r.srcTx) return false;
+      if (typeof t.date !== 'string' || Number(t.date.slice(8, 10)) > SLIP_MAX_DAY) return false;
+      const m = monthNum(t.date.slice(0, 7));
+      if (m > cur || m < cur - 1 || monthNum(r.last) < m - 1) return false;
+      return sameSubscription(r, t);
+    });
+    if (hit) out.push({ rule: r, tx: hit });
+  }
+  return out;
+}
+
+/** 밀린 결제를 찾은 반복 내역: 자동 기록을 멈추고 이유·그 내역을 기억 */
+export const pauseForSlip = (rule, tx) => ({ ...rule, active: false, pausedReason: 'slip', slipTx: tx.id });

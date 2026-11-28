@@ -46,7 +46,7 @@ import FavoritesBar from './components/FavoritesBar';
 import { useComments } from './hooks/useComments';
 import CommentThread from './components/CommentThread';
 import SubscriptionFinder from './components/SubscriptionFinder';
-import { detectSubscriptions, ruleFromSuggestion, suggestionStartText } from './lib/subscriptions';
+import { detectSubscriptions, findMonthEndSlips, pauseForSlip, ruleFromSuggestion, suggestionStartText } from './lib/subscriptions';
 import { isValidItem, isValidTx } from './lib/outbox';
 import { EMPTY_FILTERS } from './lib/searchFilters';
 import { Lazy, prefetchScreens } from './lib/lazyScreens';
@@ -446,6 +446,26 @@ export default function App() {
     const rule = ruleFromSuggestion(sg, newId().slice(0, 40));
     notifySaved(ledger.saveSetting('recurring', [...ledger.recurring, rule]), `"${sg.label}" 반복 내역으로 등록했어요 · ${suggestionStartText(rule)}`);
   };
+  // 말일 결제가 다음 달 1일로 밀린 구독: 자동 기록을 멈추고 알림 (같은 달에 자동 + 직접 입력으로 두 번 기록되지 않게)
+  // 서버에서 받은 뒤에만 판단(오래된 캐시로 멈추지 않게). 같은 규칙·내역은 한 번만 처리
+  const slipDone = useRef(new Set());
+  useEffect(() => {
+    if (!ledger.serverLoaded) return;
+    const slips = findMonthEndSlips(ledger.recurring, allTx).filter(({ rule, tx }) => !slipDone.current.has(`${rule.id}|${tx.id}`));
+    if (!slips.length) return;
+    slips.forEach(({ rule, tx }) => slipDone.current.add(`${rule.id}|${tx.id}`));
+    const byId = new Map(slips.map((s) => [s.rule.id, s]));
+    const next = ledger.recurring.map((r) => (byId.has(r.id) ? pauseForSlip(r, byId.get(r.id).tx) : r));
+    const first = slips[0];
+    const [, m, d] = first.tx.date.split('-').map(Number);
+    const msg = slips.length === 1
+      ? `"${first.rule.memo || first.rule.category}" 결제가 말일이 아니라 ${m}월 ${d}일에 들어왔어요. 두 번 기록되지 않게 자동 기록을 멈췄어요`
+      : `반복 내역 ${slips.length}개가 말일 대신 다음 달 1일쯤 결제돼서 자동 기록을 멈췄어요`;
+    ledger.saveSetting('recurring', next)
+      .then(() => show(msg, () => setSheet({ kind: 'recurring' }), { label: '반복 내역 보기', ms: 10000 }))
+      .catch(fail('자동 기록을 멈추지 못했어요'));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ledger.serverLoaded, ledger.recurring, allTx]);
   const dismissSubscription = (sg) => notifySaved(
     ledger.saveSetting('dismissedSubs', [...ledger.dismissedSubs.filter((k) => k !== sg.key), sg.key].slice(-100)),
     `"${sg.label}"은(는) 다시 제안하지 않을게요`,
