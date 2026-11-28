@@ -10,7 +10,7 @@
 // 배포: supabase functions deploy push-notify --no-verify-jwt   (대신 WEBHOOK_SECRET 헤더로 확인)
 import webpush from 'npm:web-push@3.6.7';
 import { createClient } from 'npm:@supabase/supabase-js@2';
-import { buildNotification, buildReport, reportRange, shouldSend, isPushEndpoint, pushTopic } from '../_shared/notifyMessage.js';
+import { buildNotification, buildReport, normalizePrefs, reportRange, shouldSend, isPushEndpoint, pushTopic } from '../_shared/notifyMessage.js';
 
 const env = (k: string) => (Deno.env.get(k) || '').trim();
 const VAPID_PUBLIC_KEY = env('VAPID_PUBLIC_KEY');
@@ -132,40 +132,57 @@ async function fetchAllRows<T>(build: () => any): Promise<{ data: T[] | null; er
   }
 }
 
-// 주간·월간 리포트: 리포트를 받겠다는 기기가 있는 가계부만 계산
+// 주간·월간 리포트: 리포트를 받겠다는 기기가 있는 가계부만 계산.
+// 날짜는 기기 시간 기준 → "지난주·지난달"을 기기마다 알림 설정의 시간대(prefs.tz, 처음엔 기기 시간대, 없으면 한국)로 계산
 async function sendReports(period?: string) {
   if (period !== 'week' && period !== 'month') return json(400, { error: 'period must be week or month' });
   const kind = period === 'week' ? 'weekly' : 'monthly';
-  const range = reportRange(period, new Date(), 'Asia/Seoul');
+  const now = new Date();
+  const range = reportRange(period, now, 'Asia/Seoul'); // 응답 표시용 기본값 (예전과 같은 칸)
+  const ranges: Record<string, ReturnType<typeof reportRange>> = {};
+  const rangeOf = (tz: string) => (ranges[tz] ??= reportRange(period, now, tz));
   const { data: subs, error } = await fetchAllRows<Sub>(() => admin
     .from('push_subscriptions')
     .select('id, user_id, device_id, endpoint, p256dh, auth, prefs'));
   if (error) return json(500, { error: error.message });
 
-  const byLedger = new Map<string, Sub[]>();
+  // 가계부 → 시간대 → 기기 목록
+  const byLedger = new Map<string, Map<string, Sub[]>>();
   for (const s of (subs || []) as Sub[]) {
     if (!s.user_id || !shouldSend(kind, s.prefs)) continue;
-    byLedger.set(s.user_id, [...(byLedger.get(s.user_id) || []), s]);
+    const tz = normalizePrefs(s.prefs).tz;
+    rangeOf(tz);
+    const byTz = byLedger.get(s.user_id) || new Map<string, Sub[]>();
+    byTz.set(tz, [...(byTz.get(tz) || []), s]);
+    byLedger.set(s.user_id, byTz);
   }
 
   const total = { ledgers: 0, sent: 0, skipped: 0, removed: 0, empty: 0 };
-  for (const [ledgerId, list] of byLedger) {
+  for (const [ledgerId, byTz] of byLedger) {
+    // 이 가계부의 모든 시간대 기간을 덮는 범위를 한 번에 받음
+    const rs = [...byTz.keys()].map(rangeOf);
+    const from = rs.map((r) => r.prev.start).sort()[0];
+    const to = rs.map((r) => r.cur.end).sort().slice(-1)[0];
     const { data: txs, error: e1 } = await fetchAllRows<{ type: string; amount: number; category: string; date: string }>(() => admin
       .from('transactions')
       .select('type, amount, category, date')
       .eq('user_id', ledgerId)
-      .gte('date', range.prev.start)
-      .lte('date', range.cur.end));
+      .gte('date', from)
+      .lte('date', to));
     if (e1) { console.error('report tx load failed', ledgerId, e1.message); continue; }
     let budget = 0;
     if (period === 'month') {
       const { data: st } = await admin.from('settings').select('budget').eq('user_id', ledgerId).maybeSingle();
       budget = Number(st?.budget) || 0;
     }
-    const note = buildReport({ period, range, txs: txs || [], budget });
-    if (!note) { total.empty += 1; continue; } // 그 기간 내역이 없으면 보내지 않음
-    const r = await pushTo(list, note);
-    total.ledgers += 1; total.sent += r.sent; total.skipped += r.skipped; total.removed += r.removed;
+    let sentAny = false;
+    for (const [tz, list] of byTz) {
+      const note = buildReport({ period, range: rangeOf(tz), txs: txs || [], budget });
+      if (!note) continue; // 그 기간 내역이 없으면 보내지 않음
+      const r = await pushTo(list, note);
+      sentAny = true; total.sent += r.sent; total.skipped += r.skipped; total.removed += r.removed;
+    }
+    if (sentAny) total.ledgers += 1; else total.empty += 1;
   }
-  return json(200, { period, range, ...total });
+  return json(200, { period, range, ranges, ...total });
 }

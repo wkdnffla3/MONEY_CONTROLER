@@ -213,3 +213,38 @@ console.log('analysis unit tests: all passed');
   assert.equal(suggestionStartText(ruleFromSuggestion(sg('2026-11', 31), 'r5', today), today), '12월 31일부터 자동 기록');
   console.log('subscription start text tests: all passed');
 }
+
+// 말일 결제가 다음 달 1일로 밀림 → 그 반복 내역의 자동 기록을 멈춤
+{
+  const { findMonthEndSlips, pauseForSlip, sameSubscription } = await import('../../src/lib/subscriptions.js');
+  const { resumeRule } = await import('../../src/lib/recurring.js');
+  const { isValidRecurring } = await import('../../src/lib/outbox.js');
+  const today = new Date(2026, 11, 2); // 2026-12-02
+  const rule = (o = {}) => ({ id: 'r1', type: 'expense', amount: 13900, category: '구독', memo: '넷플릭스', memberId: null, day: 31, start: '2026-01', end: null, last: '2026-11', active: true, ...o });
+  const t = (id, date, o = {}) => ({ id, type: 'expense', amount: 13900, category: '구독', memo: '넷플릭스', date, ...o });
+  const txs = [t('rec-r1-2026-11', '2026-11-30'), t('m1', '2026-12-01')];
+  // 감지: 11월 몫 자동 기록됨 + 12월 1일에 직접 입력한 같은 결제
+  let s = findMonthEndSlips([rule()], txs, today);
+  assert.equal(s.length, 1); assert.equal(s[0].tx.id, 'm1');
+  // 감지 안 함: 결제일이 말일 근처가 아님 / 일시정지 중 / 4일 이후 / 자동 기록(rec-) / 다른 구독 / 전달 몫 미기록 / 이미 알린 내역
+  assert.equal(findMonthEndSlips([rule({ day: 15 })], txs, today).length, 0);
+  assert.equal(findMonthEndSlips([rule({ active: false })], txs, today).length, 0);
+  assert.equal(findMonthEndSlips([rule()], [t('m2', '2026-12-04')], today).length, 0);
+  assert.equal(findMonthEndSlips([rule()], [t('rec-r1-2026-12', '2026-12-01')], today).length, 0);
+  assert.equal(findMonthEndSlips([rule()], [t('m3', '2026-12-01', { memo: '유튜브' })], today).length, 0);
+  assert.equal(findMonthEndSlips([rule({ last: '2026-09' })], [t('m4', '2026-12-01')], today).length, 0);
+  assert.equal(findMonthEndSlips([rule({ slipTx: 'm1' })], txs, today).length, 0);
+  assert.equal(findMonthEndSlips([rule()], [t('m5', '2026-10-01')], today).length, 0); // 오래된 결제
+  // 메모 없는 규칙: 같은 카테고리 + 금액 10% 이내
+  assert.equal(sameSubscription(rule({ memo: '' }), t('x', '2026-12-01', { memo: '', amount: 14500 })), true);
+  assert.equal(sameSubscription(rule({ memo: '' }), t('x', '2026-12-01', { memo: '', amount: 20000 })), false);
+  // 멈춤 → 이유·내역 기억, 검사 통과 / 다시 시작하면 이유만 지우고 같은 내역으로는 다시 안 멈춤
+  const paused = pauseForSlip(rule(), s[0].tx);
+  assert.equal(paused.active, false); assert.equal(paused.pausedReason, 'slip'); assert.equal(paused.slipTx, 'm1');
+  assert.equal(isValidRecurring([paused]), true);
+  assert.equal(isValidRecurring([{ ...paused, pausedReason: 'other' }]), false);
+  const resumed = resumeRule(paused, today);
+  assert.equal(resumed.active, true); assert.equal('pausedReason' in resumed, false); assert.equal(resumed.slipTx, 'm1');
+  assert.equal(findMonthEndSlips([resumed], txs, today).length, 0);
+  console.log('month-end slip tests: all passed');
+}

@@ -77,6 +77,9 @@ export default function RecurringManager({ rules, members, meId = null, onSave }
                     매달 {dayLabel(r.day)} · {r.category}{r.cardId ? ` · 💳 ${cardName(r.cardId)}` : ''}{r.tags?.length ? ` · ${r.tags.map((t) => `#${t}`).join(' ')}` : ''}
                     {r.active ? (next ? ` · 다음 ${fmtDate(next)}` : ' · 종료됨') : ' · 일시정지'}
                   </div>
+                  {!r.active && r.pausedReason === 'slip' && (
+                    <div className="rule-slip">⚠️ 말일 결제가 다음 달 1일에 들어와서 자동 기록을 멈췄어요. 결제일을 1일로 고치거나 다시 시작해 주세요.</div>
+                  )}
                 </div>
                 <div className={`amt num ${r.type === 'income' ? 'inc' : ''}`}>{r.type === 'income' ? '+' : '-'}{won(r.amount)}</div>
                 <div className="rule-actions">
@@ -149,6 +152,9 @@ function RuleForm({ rule, members, meId = null, onCancel, onDone }) {
       last: rule?.last ?? null, // 이미 등록한 달은 유지 → 수정해도 지난 달이 다시 생기지 않음
       active: rule?.active ?? true,
       ...(rule?.srcTx ? { srcTx: rule.srcTx } : {}), // 내역에서 반복으로 바꾼 경우 그 내역과의 연결 유지
+      // 말일→1일로 밀려 멈춘 기록 유지 (고쳐도 같은 결제로 다시 멈추지 않게, 아직 멈춘 상태면 이유도)
+      ...(rule?.slipTx ? { slipTx: rule.slipTx } : {}),
+      ...(rule?.pausedReason && !(rule?.active ?? true) ? { pausedReason: rule.pausedReason } : {}),
       ...(type === 'expense' && cardId && cards.some((c) => c.id === cardId) ? { cardId } : {}), // 결제 카드 (일시불)
       ...(tags.length ? { tags } : {}),
     });

@@ -100,6 +100,20 @@ console.log('ok 6. 월간 리포트 호출 →', JSON.stringify({ ...r.body, ran
   db.transactions.length = before;
   console.log('ok 6b. 내역 1000건 넘어도 리포트 합계 전부');
 }
+{
+  // 기기 시간 기준: 알림 설정의 시간대(prefs.tz)마다 "지난주"를 따로 계산, 같은 가계부는 한 번만 셈
+  const { reportRange } = await import('../../supabase/functions/_shared/notifyMessage.js');
+  db.push_subscriptions.push(sub('s7', L, 'dev7', { tz: 'America/Los_Angeles' }));
+  sent.length = 0;
+  const rt = await call({ type: 'REPORT', period: 'week' });
+  assert.equal(rt.status, 200);
+  assert.deepEqual(Object.keys(rt.body.ranges).sort(), ['America/Los_Angeles', 'Asia/Seoul']);
+  assert.deepEqual(rt.body.ranges['America/Los_Angeles'], JSON.parse(JSON.stringify(reportRange('week', new Date(), 'America/Los_Angeles'))));
+  assert.equal(rt.body.ledgers, 1); // 시간대가 둘이어도 가계부는 하나
+  assert.ok(sent.some((x) => x.endpoint.endsWith('/s7')), 'LA 기기도 받음');
+  db.push_subscriptions.splice(db.push_subscriptions.findIndex((x) => x.id === 's7'), 1);
+  console.log('ok 6c. 리포트 기간은 기기 시간대(prefs.tz)별로');
+}
 assert.equal((await call({ type: 'REPORT', period: 'year' })).status, 400);
 console.log('ok 7. 잘못된 period → 400');
 assert.deepEqual(globalThis.__vapid, ['mailto:a@b.c', 'pub', 'priv']);
